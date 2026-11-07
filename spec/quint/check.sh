@@ -91,7 +91,7 @@ finish() {
 # being found (renamed so it no longer ends in `Test`, say) fails the gate.
 SPELLS="spells/basicSpells.qnt:6 spells/soup.qnt:4"
 MODULES="types.qnt wire.qnt indexer.qnt hub.qnt abstractHub.qnt hubMachine.qnt shim.qnt protocol.qnt"
-FUNCTIONAL="tests/wireTest.qnt:11 tests/indexerTest.qnt:14 tests/hubTest.qnt:25 tests/shimTest.qnt:14
+FUNCTIONAL="tests/wireTest.qnt:11 tests/indexerTest.qnt:14 tests/hubTest.qnt:26 tests/shimTest.qnt:14
   tests/hubScenariosTest.qnt:25 tests/scenariosTest.qnt:22 tests/trustTest.qnt:14"
 
 fail() {
@@ -308,9 +308,9 @@ finish
 echo "---- 3 invariants ($SAMPLES traces, seed $SEED)"
 
 # The guarantees, where they are claimed.
-job holds baseline            operatorBlind queuedBytesConfidential txidAuthenticity lookupValidityPerHub pendingOnlyFromQueue forwardedSpendsNoDiverted
-job holds byzHub              operatorBlind txidAuthenticity forwardedSpendsNoDiverted
-job holds byzIndexer          operatorBlind txidAuthenticity pendingOnlyFromQueue forwardedSpendsNoDiverted
+job holds baseline            operatorBlind queuedBytesConfidential txidAuthenticity lookupValidityPerHub oneAnswerPerLookup pendingOnlyFromQueue forwardedSpendsNoDiverted
+job holds byzHub              operatorBlind txidAuthenticity oneAnswerPerLookup forwardedSpendsNoDiverted
+job holds byzIndexer          operatorBlind txidAuthenticity oneAnswerPerLookup pendingOnlyFromQueue forwardedSpendsNoDiverted
 
 # The known gaps, with every component honest.
 job fails baseline            quietStep 40 statusNeverRegresses                    # K2
@@ -320,7 +320,7 @@ finish
 
 echo "---- 3b witnesses ($SAMPLES traces, seed $SEED)"
 
-BASELINE_HOLDS="operatorBlind queuedBytesConfidential txidAuthenticity lookupValidityPerHub pendingOnlyFromQueue forwardedSpendsNoDiverted"
+BASELINE_HOLDS="operatorBlind queuedBytesConfidential txidAuthenticity lookupValidityPerHub oneAnswerPerLookup pendingOnlyFromQueue forwardedSpendsNoDiverted"
 
 # The accepted disclosure, an observer served a published body, and the
 # antecedents of G1, G2 and G9. The served body is G2's reply-body branch, which
@@ -343,10 +343,10 @@ job reaches baseline earlyLookupStep 40 \
 
 job reaches byzHub quietStep 40 \
   vOperatorBlind vTxidAuthenticity vForwardedSpendsNoDiverted \
-  -- operatorBlind txidAuthenticity forwardedSpendsNoDiverted
+  -- operatorBlind txidAuthenticity oneAnswerPerLookup forwardedSpendsNoDiverted
 job reaches byzIndexer quietStep 40 \
-  vOperatorBlind vTxidAuthenticity vForwardedSpendsNoDiverted \
-  -- operatorBlind txidAuthenticity pendingOnlyFromQueue forwardedSpendsNoDiverted
+  wPending vOperatorBlind vTxidAuthenticity vForwardedSpendsNoDiverted \
+  -- operatorBlind txidAuthenticity oneAnswerPerLookup pendingOnlyFromQueue forwardedSpendsNoDiverted
 finish
 fi
 
@@ -379,6 +379,7 @@ job tlc_violated initFlakyTipNoSlack    step $G6B 12                    # K3'
 job tlc_violated initStaleLag           step $G6B 13                    # K4
 job tlc_violated initStaleLag           step $K6 13                     # K6
 job tlc_violated initStaleLagWithSlack  step $G6B 19                    # finding 2's spent epoch, not fixed by #85
+job tlc_violated initFlakyStaleLagWithSlack step $G6B 15                # K11
 # K5, three causes: a crash; without one, a final flush nothing judged; with
 # no shutdown either, a requeue that gives the entry up as expired.
 job tlc_violated initTimely             step $K5 5
@@ -409,6 +410,8 @@ job tlc_violated initFlakyTip           step "not(wStopped)" 4
 job tlc_violated initFlakyTip           step "not(wTimelyQueuedBehindEpoch)" 6
 job tlc_violated initStaleLag           step "not(wStale)" 6
 job tlc_violated initStaleLagWithSlack  step "not(wStale)" 6
+job tlc_violated initFlakyTip           step "not(wAdmittedAheadOfTip)" 6
+job tlc_violated initStaleLagWithSlack  step "not(wAdmittedAheadOfTip)" 9
 finish
 fi
 

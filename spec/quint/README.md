@@ -132,15 +132,16 @@ The deployment targets the server-side and network-metadata adversaries of Taylo
 
 | Id | Name | What it says | Answers | Checked by |
 |---|---|---|---|---|
-| G1 | `operatorBlind` | Every transaction the shim forwards to the operator's indexer is one the classifier passes: a Sprout, Sapling or Ironwood transaction, or a coinbase | T1 | Simulation |
-| G2 | `queuedBytesConfidential` | Everything the observer has learned is on the chain, or was a transaction the classifier passes, given to the operator's indexer. Its knowledge is derived from the replies sent to it and the operator's view | T2 | Simulation |
+| G1 | `operatorBlind` | Every transaction the shim forwards to the operator's indexer is a Sprout, Sapling or Ironwood transaction, or a coinbase, read from its pools and not from the shim's classifier | T1 | Simulation |
+| G2 | `queuedBytesConfidential` | Everything the observer has learned is on the chain, or was a Sprout, Sapling or Ironwood transaction or a coinbase given to the operator's indexer. Its knowledge is derived from the replies sent to it and the operator's view | T2 | Simulation |
 | G3 | `txidAuthenticity` | A transaction served to the wallet has the txid asked for. It need not be the bytes the wallet sent, and its height is whatever the hub said | T3 | Simulation; `servedOnlyOnMatchingTxidTest` exhaustively |
 | G4 | `lookupValidityPerHub` | Every lookup answer other than "unavailable" was true at the hub that gave it at some point between request and answer. Not-found during the flush window counts as true, as the implementation intends (`Hub::lookup`, `zeronym/hub/src/server.rs`). It does not say that successive answers agree | T4 | Simulation |
 | G5 | `pendingOnlyFromQueue` | Every "pending" the wallet is told was true at the hub that gave it: the transaction was queued there. G4 restricted to pending | T4 | Simulation |
+| G10 | `oneAnswerPerLookup` | The wallet gets at most one answer per lookup the shim sent. G4 reads its window from the shim's waiters, so a second answer is invisible to it |  | Simulation |
 | G9 | `forwardedSpendsNoDiverted` | No transaction the shim forwards to the operator's indexer spends an output of one the shim diverted, in either order and before or after publication. Holds while every such spend has transparent parts only; a spend with a shielded bundle is K10 | T19 | Simulation; `texSecondLegIsDivertedTest` |
 | G6b | `conformingFirstOfferBeforeExpiry` | A supported wallet's transaction is offered with the mining margin to spare, the first time a hub offers it. About the margin left when the flush begins, not about acceptance; nothing about a later offer of a requeued entry | T5 | TLC, exhaustive |
 | G8 | `admissionMatchesCadence` | Every entry admitted, and not requeued, survives the first flush the cadence has not spent, with the mining margin to spare against the cadence boundary. G6b is the margin at the chain height | T5 | TLC, exhaustive |
-| G7 | `wellFormedTest` | Structural sanity of the hub: a queued entry is within its attempts and a down hub holds nothing | T6 | Exhaustive test over every reachable hub state |
+| G7 | `wellFormedTest` | Structural sanity of the hub: a queued entry is within its attempts, a down hub holds nothing and knows nothing, and a stopped hub holds nothing | T6 | Exhaustive test over every reachable hub state |
 | A2 | `neverEvictTest` | An entry leaves the hub's queue only into a flush, because a node judged an entry with its txid and the hub burned that txid, or because the hub went down or exited after its final flush | T6 | Exhaustive test over every reachable hub state and input |
 | A3 | `drainIsFinalTest` | A draining honest hub's queue gains only what a flush hands back | T6 | Exhaustive test over every reachable hub state and input |
 
@@ -164,11 +165,12 @@ Single-fault. "holds" is a checked row on the named [configuration][configuratio
 | G4 | holds (`baseline`) | **required**: `hubDeniesQueuedTest`, `hubServesFalseHeightTest` | **required**: `indexerServesFalseHeightTest`. One endpoint suffices |
 | G5 | holds (`baseline`) | **required**: `hubForgesPendingTest` | holds (`byzIndexer`); `indexerEmptyAnswerIsUnavailableTest` |
 | G9 | holds (`baseline`) | holds (`byzHub`) | holds (`byzIndexer`) |
+| G10 | holds (`baseline`) | holds (`byzHub`) | holds (`byzIndexer`) |
 | G6b | holds (`timely`, `flakyTip`) | argued, not checked: a hub that admits while it has no tip breaks it | **required**: `indexerWithholdsTipFromConformingTest`. Needs every endpoint |
 | G8 | holds (`timely`, `flakyTip`, `staleLagWithSlack`) | argued, not checked | argued, not checked: admission never judges below the recorded boundary, whatever the tip. Against the cadence boundary only |
 | A3 | holds | argued, not checked: draining is an admission rule | holds |
 
-- A hub folds several indexer endpoints into one answer: the tip is the maximum of the answers the tip guard keeps (`batcher.rs:245-282`, `chain.rs:176-208` at #92), a lookup takes the first "found", a broadcast takes the best verdict. So one misbehaving endpoint can raise the tip (on mainnet, only inside the guard's band and climb rate), inject a lookup answer or change a verdict, while lowering or freezing the tip takes every endpoint. The model has one abstract indexer and does not enforce that difference; the indexer cells say which each needs.
+- A hub folds several indexer endpoints into one answer: the tip is the maximum of the answers the tip guard keeps (`batcher.rs:245-282`, `chain.rs:176-208` at #92), a lookup takes the first "found", a broadcast takes the best verdict. So one misbehaving endpoint can raise the tip (on mainnet, only inside the guard's band and climb rate), inject a lookup answer or raise the verdict to `Accepted` or `AlreadyKnown`, while lowering or freezing the tip takes every endpoint. A burn happens when every endpoint that answered says mined or rejected. The model has one abstract indexer and does not enforce that difference; the indexer cells say which each needs.
 - There is no shim column: every wallet-facing guarantee assumes an honest, attested shim.
 - G3 is the only wallet-facing guarantee that survives a Byzantine hub or indexer, and it authenticates the txid only.
 - G1 and G9 depend on the shim alone.
@@ -190,6 +192,7 @@ Single-fault. "holds" is a checked row on the named [configuration][configuratio
 | K6 | T5 | `conformingEveryOfferBeforeExpiry`: G6b for every offer, not only the first | Found here (finding 7); not triaged | `staleLag` | TLC, violated | `requeuedPastExpiryTest` |
 | K9 | T5 | G6b even when the expiry floor is wide enough to cover a tip silence: a stale hub's free-running clock flushes an empty queue early and spends the next epoch, so a transaction admitted after the tip returns waits a full interval | Found here (finding 2). #85 fixed admission's half (G8); the spent epoch remains, and this counterexample is unchanged | `staleLagWithSlack` | TLC, violated | `earlyFlushSpendsTheNextEpochTest` |
 | K10 | T19 | G9 for a spend that carries a shielded bundle. A wallet deshields Orchard to its own address, then auto-shields that output into Ironwood: the second transaction forwards, and its prevout names the diverted first | By design in #94: catching it needs a record of what was diverted, and the shim keeps none (`zeronym/shim/ENDPOINTS.md:208-214` at #94) | `shieldedSpend` | simulation, violated | `shieldedSpendOfDivertedIsForwardedTest` |
+| K11 | T5 | G6b when the expiry floor covers the reorg allowance and the silence each alone. A report one below the best un-dues a flush, then a silence shorter than the staleness window delays it further: the hub flushes the allowance plus the window minus one late, while running. With the floor one block higher the shortest counterexample is K9's | Found here; not triaged. On the shipped constants K4 already loses the margin | `flakyStaleLagWithSlack` | TLC, violated | |
 
 K1 is not an invariant because it would be false on the ordinary success path too: the wallet is told ok before the hub has the frame.
 
@@ -278,6 +281,7 @@ The schedule flushes every 3 blocks with a mining margin of 2, a delivery lag of
 | `flakyTipNoSlack` | and the expiry floor is 6, leaving no reorg slack | K3' |
 | `staleLag` | the hub may hear no tip, and goes stale | K4, K6 |
 | `staleLagWithSlack` | and the expiry floor is 8, enough to cover the silence | finding 2 |
+| `flakyStaleLagWithSlack` | as `staleLagWithSlack`, and the tip may also be reported up to the reorg allowance behind | K11 |
 | `byzIndexer` | a Byzantine indexer, and a tight-expiry payload | the trust matrix |
 | `unknownUpgrade` | an unparseable payload; scripted runs only | the attempt bound |
 
@@ -297,6 +301,7 @@ With 8 workers, on the machine this was written on:
 | `flakyTipNoSlack` | G6b (K3') | violated, 12 states |
 | `staleLag` | G6b; K6 | violated, 13; 13 states |
 | `staleLagWithSlack` | G6b (finding 2) | violated, 19 states |
+| `flakyStaleLagWithSlack` | G6b (K11); G8 | violated, 15 states; holds, 2 461 236 states, not in the gate |
 | `timely` | K5 | violated: 5 states; 8 without a crash; 12 without a shutdown either |
 | `byzIndexer` | G6b | violated, 16 states |
 

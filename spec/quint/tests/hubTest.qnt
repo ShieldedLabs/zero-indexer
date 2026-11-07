@@ -414,12 +414,14 @@ module hubTest {
       state.phase == Draining implies REACH_INPUTS.forall(input =>
         hub(state, input).state.queued().subseteq(state.queued().union(state.inFlight())))))
 
-  /// G7's hub half: a queued entry is within its attempts, and a hub that is
-  /// down holds nothing and knows nothing.
+  /// G7's hub half: a queued entry is within its attempts, a hub that is
+  /// down holds nothing and knows nothing, and a hub that has stopped holds
+  /// nothing.
   run wellFormedTest =
     assert(REACH.forall(state => and {
       state.queued().forall(payload => state.queue.get(payload) >= 0 and state.queue.get(payload) <= PARAMS.maxAttempts),
       state.phase == Down implies state == down,
+      state.phase == Stopped implies (state.queue == Map() and state.flush == Idle),
     }))
 
   /// The observed tip is the best, or within the reorg allowance below it.
@@ -500,5 +502,25 @@ module hubTest {
     assert(realises(ending, FlushDoneHInput, ending.project().giveBack(Set(pJunk)), None)),
     // lose
     assert(realises(holding, CrashHInput, emptyAHub, None)),
+    // answer a lookup from the queue, and from the indexer
+    val fromQueue = LookupHInput({ nonce: 1, txid: "a", answer: INotFound })
+    assert(realises(holding, fromQueue, holding.project(), Some(AWire(render(QueueHit))))),
+    val fromIndexer = LookupHInput({ nonce: 1, txid: "zz", answer: INotFound })
+    assert(realises(holding, fromIndexer, holding.project(),
+      Some(AWire(render(FromIndexer(INotFound)))))),
+  }
+
+  /// `isInternal` refuses moves the protocol's hub never makes, so loosening
+  /// it cannot let a real step through unnoticed.
+  run isInternalIsTightTest = {
+    val out = { queue: Set(pA), held: Set(pB) }
+    all {
+      // a payload joins the queue with no submission
+      assert(not(isInternal(out, { queue: Set(pA, pC), held: Set(pB) }))),
+      // the flush comes back with a payload it never held
+      assert(not(isInternal(out, { queue: Set(pA, pC), held: Set() }))),
+      // a second take while a flush is out
+      assert(not(isInternal(out, out.take()))),
+    }
   }
 }

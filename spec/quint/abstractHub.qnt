@@ -73,7 +73,7 @@ module abstractHub {
   pure def isInternal(h: AHub, after: AHub): bool =
     or {
       after == h,
-      after == h.take(),
+      h.held == Set() and after == h.take(),
       h.held.exists(payload => after == h.settle(payload) or after == h.settleWithCopy(payload)),
       after.held == Set() and after.queue.subseteq(h.queue.union(h.held)) and h.queue.subseteq(after.queue),
       after == emptyAHub,

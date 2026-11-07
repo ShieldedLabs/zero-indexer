@@ -13,7 +13,9 @@
 /// symmetric. The tip is the maximum over the endpoints that answer; a lookup
 /// returns the first `found`; a broadcast takes the best verdict. So a single
 /// misbehaving endpoint is enough to raise the tip, inject a lookup answer or
-/// change a verdict, while lowering or freezing the tip takes every endpoint.
+/// raise the verdict to `Accepted` or `AlreadyKnown`, while lowering or
+/// freezing the tip takes every endpoint. A burn happens when every endpoint
+/// that answered says mined or rejected.
 /// "Byzantine indexer" in this specification covers both cases.
 module indexer {
   import basicSpells.* from "./spells/basicSpells"

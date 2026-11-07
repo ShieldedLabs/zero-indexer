@@ -175,18 +175,6 @@ module protocol {
   pure def events(s: System): Set[WalletEvent] =
     s.wallet.log.indices().map(i => s.wallet.log[i])
 
-  /// The payloads the wallet has been told were diverted.
-  pure def toldOk(s: System): Set[Payload] =
-    s.events().filterMap(event =>
-      match event {
-        | Sent(sent) =>
-          match sent.input {
-            | Clean(payload) => if (sent.obs == SentOk) Some(payload) else None
-            | _ => None
-          }
-        | _ => None
-      })
-
   /// The frames `client` has addressed to the hub.
   pure def toHub(s: System, client: Addr): Set[Msg] =
     s.net.filter(mail => mail.src == client and mail.dst == HubAddr).map(mail => mail.msg)
@@ -388,20 +376,28 @@ module protocol {
   // Guarantees
   // ------------------------------------------------------------------------
 
+  /// What the operator may be given, read from the pools alone: a Sprout,
+  /// Sapling or Ironwood transaction, or a coinbase. It does not call the
+  /// shim's `treatAsMigration`, so a change to the shim cannot move it.
+  pure def mayReachOperator(payload: Payload): bool =
+    or {
+      payload.class == OtherShielded,
+      payload.class == TransparentOnly and payload.spends == Set(),
+    }
+
   /// G1. The operator sees no migration: everything the shim hands it is a
-  /// transaction `treatAsMigration` passes, a Sprout, Sapling or Ironwood
-  /// transaction or a coinbase.
+  /// Sprout, Sapling or Ironwood transaction or a coinbase.
   pure def operatorBlindIn(s: System): bool =
-    s.operator.forall(payload => not(treatAsMigration(payload)))
+    s.operator.forall(payload => mayReachOperator(payload))
 
   /// G2. A transaction's bytes do not reach an observer before the chain has
   /// published them. Everything the observer has learned is on the chain,
-  /// or was a transaction the classifier passes and the operator was given.
+  /// or was a transaction the operator may be given and was given.
   pure def queuedBytesConfidentialIn(s: System): bool =
     s.tpLearned().forall(payload =>
       or {
         s.indexer.published().contains(payload),
-        s.operator.contains(payload) and not(treatAsMigration(payload)),
+        s.operator.contains(payload) and mayReachOperator(payload),
       })
 
   /// G3. A transaction served to the wallet has the txid the wallet asked for.
@@ -417,6 +413,13 @@ module protocol {
           }
         | _ => true
       })
+
+  /// The wallet gets at most one answer per lookup the shim sent: a reply or
+  /// a timeout ends the lookup at the shim, and a later reply finds no one
+  /// waiting. It counts the log, so two equal answers count twice.
+  pure def oneAnswerPerLookupIn(s: System): bool =
+    val answers = s.wallet.log.select(event => match event { | Got(_) => true | _ => false })
+    answers.length() <= s.lookups(ShimAddr).size()
 
   /// G4. Every lookup answer other than `Unavailable` was true, at the hub
   /// that gave it, at some point between the request and the answer.
@@ -619,8 +622,6 @@ module protocol {
 
   /// What a wallet may send.
   def SEND_INPUTS = PAYLOADS.map(payload => Clean(payload)).union(Set(Unreadable, EmptyBody))
-  /// Every transaction id there is.
-  def TXIDS = txidsOf(PAYLOADS)
 
   /// The standing assumption, checked by every named init: payloads are told
   /// apart by their bytes.
@@ -1034,6 +1035,7 @@ module protocol {
   val queuedBytesConfidential = queuedBytesConfidentialIn(s)
   val txidAuthenticity = txidAuthenticityIn(s)
   val lookupValidityPerHub = lookupValidityPerHubIn(s, audit)
+  val oneAnswerPerLookup = oneAnswerPerLookupIn(s)
   val pendingOnlyFromQueue = pendingOnlyFromQueueIn(s, audit)
   val forwardedSpendsNoDiverted = forwardedSpendsNoDivertedIn(s)
 
@@ -1081,10 +1083,6 @@ module protocol {
   /// The same frame, sent by the observer instead.
   pure def fromObserver(mail: Mail): Mail =
     { ...mail, src: ObserverAddr }
-
-  /// The hub's ack to the shim under `nonce`.
-  pure def ackMail(nonce: Nonce, ack: WireAck): Mail =
-    { src: HubAddr, dst: ShimAddr, msg: Ack({ nonce: nonce, ack: ack }) }
 
   /// The hub's lookup reply to the shim under `nonce`.
   pure def replyMail(nonce: Nonce, reply: WireReply): Mail =

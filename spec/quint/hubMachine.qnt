@@ -222,7 +222,7 @@ module hubMachine {
   def tips: Set[Height] =
     match cfg.indexerRole {
       | Honest =>
-        honestTips(chain, if (cfg.tip == TipMayRegress) cfg.params.reorgAllowance else 0, CLOCK_HEIGHTS)
+        honestTips(chain, if (cfg.tip == TipMayRegress or cfg.tip == TipMayRegressAndLag) cfg.params.reorgAllowance else 0, CLOCK_HEIGHTS)
       | Byzantine => byzTips(CLOCK_HEIGHTS)
     }
 
@@ -319,7 +319,7 @@ module hubMachine {
   /// A hub that has seen no new high for the staleness window goes stale, or,
   /// already stale, reads its free-running clock again.
   action staleWith(estimate: Height): bool = all {
-    cfg.tip == TipMayLag,
+    cfg.tip == TipMayLag or cfg.tip == TipMayRegressAndLag,
     h.phase == Stale or silence >= cfg.staleWindow,
     freeRunEstimates.contains(estimate),
     hubTakes(StaleHInput(estimate)),
@@ -460,6 +460,8 @@ module hubMachine {
   /// - `TipMayLag`: a hub that has gone the staleness window without a new
   ///   high has become stale, and a stale hub's free-running clock has caught
   ///   up with the current block.
+  /// - `TipMayRegressAndLag`: as `TipMayLag`, and a report may also be up to
+  ///   the reorg allowance behind, so the two lags add.
   def mayAdvance: bool = and {
     height < cfg.maxHeight,
     not(h.isFlushDue()),
@@ -469,6 +471,11 @@ module hubMachine {
         | TipTimely => h.phase == Running implies polled
         | TipMayRegress => h.phase == Running implies lag <= cfg.params.reorgAllowance
         | TipMayLag =>
+          and {
+            h.phase == Running implies silence < cfg.staleWindow,
+            h.phase == Stale implies h.cadenceHeight() >= height,
+          }
+        | TipMayRegressAndLag =>
           and {
             h.phase == Running implies silence < cfg.staleWindow,
             h.phase == Stale implies h.cadenceHeight() >= height,
@@ -620,6 +627,16 @@ module hubMachine {
         | Some(epoch) => h.cadenceEpoch() < epoch
         | None => false
       }
+  /// An entry admitted and not requeued, with an expiry, is queued while the
+  /// recorded epoch's boundary is above the observed tip: admission judged it
+  /// at the boundary, not at the tip. The case `admissionMatchesCadence` is for.
+  val wAdmittedAheadOfTip =
+    match h.lastEpoch {
+      | Some(epoch) =>
+        epoch * cfg.params.flushInterval > h.observedTip() and
+          h.queued().exists(payload => h.queue.get(payload) == 0 and isSome(payload.expiry))
+      | None => false
+    }
 
   // ------------------------------------------------------------------------
   // Configurations
@@ -679,6 +696,10 @@ module hubMachine {
     payloads: Set(orchard("early", 2, 10), orchard("late", 4, 12)),
   }
 
+  // Both lags at once, on the slack that covers each alone. The hub can
+  // flush their sum late (K11).
+  pure val flakyStaleLagWithSlack: HubConfig = { ...staleLagWithSlack, tip: TipMayRegressAndLag }
+
   // A Byzantine indexer, on the schedule of `timely`, with one supported
   // migration and `tight`.
   pure val byzIndexer: HubConfig = { ...timely, indexerRole: Byzantine, payloads: Set(early, tight) }
@@ -710,5 +731,11 @@ module hubMachine {
     staleSlackFits(staleLagWithSlack),
     not(shippedRelationsKept(staleLagWithSlack)),
     initWith(staleLagWithSlack),
+  }
+  action initFlakyStaleLagWithSlack = all {
+    standingAssumptions(flakyStaleLagWithSlack),
+    reorgSlackFits(flakyStaleLagWithSlack),
+    staleSlackFits(flakyStaleLagWithSlack),
+    initWith(flakyStaleLagWithSlack),
   }
 }

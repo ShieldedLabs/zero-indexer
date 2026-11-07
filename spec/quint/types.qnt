@@ -195,7 +195,8 @@ module types {
   /// - `TipMayRegress`: a report may be up to the reorg allowance behind.
   /// - `TipMayLag`: a hub may go without a report for a while, and is stale
   ///   once the silence reaches the staleness window.
-  type TipModel = TipTimely | TipMayRegress | TipMayLag
+  /// - `TipMayRegressAndLag`: both, so the two lags add.
+  type TipModel = TipTimely | TipMayRegress | TipMayLag | TipMayRegressAndLag
 
   // ------------------------------------------------------------------------
   // What the wallet observes
