@@ -220,26 +220,36 @@ const DIAL_BACKOFF: Duration = Duration::from_millis(100);
 /// connection with no error and no timeout of its own.
 const DIAL_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// How long the accept loop pauses after a file-descriptor exhaustion error, so
 /// How many wallet connections may be in flight at once.
 ///
-/// The per-request buffer is already capped at `MAX_SEND_TX_BYTES` (4 MiB), but
-/// nothing capped the AGGREGATE: the accept loop spawned a task per socket with
-/// no semaphore, no counter and no admission control, so the ceiling was however
-/// many sockets an attacker cared to open (Hornby review, 2026-08-19). Against a
-/// fixed 2048 MB enclave that is roughly 512 concurrent 4 MiB bodies before the
-/// process is killed, and it takes the mixnet client, its identity, and any
-/// acknowledged-but-unemitted submit with it.
+/// The accept loop used to spawn a task per socket with no admission control,
+/// so the ceiling was however many sockets an attacker cared to open (Hornby
+/// review, 2026-08-19). Each connection now holds one permit for its whole
+/// life, which bounds descriptors and connection tasks.
 ///
-/// 256 keeps the worst case near 1 GB with headroom for everything else the
-/// enclave holds, while being far above what honest wallet traffic reaches: a
-/// wallet opens one connection and reuses it for streamed gRPC.
+/// Memory needs a second bound, because HTTP/2 carries many streams on each
+/// connection (`MAX_CONCURRENT_STREAMS`) and each `SendTransaction` stream
+/// buffers its body. Buffered bodies draw on the shared
+/// `intercept::BODY_BUDGET_BYTES` (external report, @ouicate).
+///
+/// 256 is far above what honest wallet traffic reaches: a wallet opens one
+/// connection and reuses it for streamed gRPC.
 ///
 /// A connection over the limit is CLOSED, not queued. Holding it would rebuild
 /// the same unbounded pile one layer up, and a wallet that is refused retries,
 /// which is the behaviour it already has for any dropped connection.
 const MAX_INFLIGHT_CONNECTIONS: usize = 256;
 
+/// How many HTTP/2 streams one wallet connection may carry at once.
+///
+/// hyper's default is 200. Each open stream holds a task and its request state
+/// from its first frame, so this times `MAX_INFLIGHT_CONNECTIONS` bounds them:
+/// 25,600 at most. In production the in-enclave Caddy multiplexes many wallets
+/// onto one shim connection, and Go's HTTP/2 client opens another connection
+/// when one reaches its stream limit, so honest traffic keeps flowing.
+const MAX_CONCURRENT_STREAMS: u32 = 100;
+
+/// How long the accept loop pauses after a file-descriptor exhaustion error, so
 /// it does not spin at full tilt while the process is out of descriptors.
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 
@@ -527,6 +537,8 @@ where
     // Bounds how many wallet connections are alive at once. Created here so the
     // budget is shared across the whole listener rather than per-connection.
     let inflight = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_INFLIGHT_CONNECTIONS));
+    // Shared the same way, across every connection and stream.
+    let budget = intercept::BodyBudget::new();
     tokio::pin!(shutdown);
 
     loop {
@@ -582,6 +594,7 @@ where
                 let diversion = diversion.clone();
                 let caution = caution.clone();
                 let status = status.clone();
+                let budget = budget.clone();
                 tokio::spawn(async move {
                     let _live = live;
                     let _permit = permit;
@@ -595,6 +608,7 @@ where
                                 caution,
                                 broadcast_only,
                                 status,
+                                budget,
                             )
                             .await
                         }
@@ -611,6 +625,7 @@ where
                                     caution,
                                     broadcast_only,
                                     status,
+                                    budget,
                                 )
                                 .await
                             }
@@ -666,6 +681,7 @@ async fn serve_connection<IO>(
     caution: CautionRelay,
     broadcast_only: bool,
     status: crate::nym::MixnetStatus,
+    budget: intercept::BodyBudget,
 ) where
     IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
@@ -683,11 +699,23 @@ async fn serve_connection<IO>(
         let diversion = diversion.clone();
         let caution = caution.clone();
         let status = status.clone();
+        let budget = budget.clone();
         // The request side of the same tonic-web length bug as below: a
         // grpc-web-text body keeps its base64 length after decoding, which hyper
         // would send upstream as content-length.
         let req = req.map(|body| InboundBody::new(body.map_frame(|frame| frame)));
-        async move { handle(req, pool, diversion, caution, broadcast_only, status).await }
+        async move {
+            handle(
+                req,
+                pool,
+                diversion,
+                caution,
+                broadcast_only,
+                status,
+                budget,
+            )
+            .await
+        }
     });
 
     // Browser wallets speak gRPC-web, which carries the status in the body
@@ -733,6 +761,7 @@ async fn serve_connection<IO>(
         server_h2::Builder::new(TokioExecutor::new())
             .initial_stream_window_size(STREAM_WINDOW)
             .initial_connection_window_size(CONNECTION_WINDOW)
+            .max_concurrent_streams(MAX_CONCURRENT_STREAMS)
             .serve_connection(TokioIo::new(stream), service),
     );
     if let Err(err) = conn.await {
@@ -749,6 +778,7 @@ async fn handle(
     caution: CautionRelay,
     broadcast_only: bool,
     status: crate::nym::MixnetStatus,
+    budget: intercept::BodyBudget,
 ) -> Result<Response<ProxyBody>, Infallible> {
     let method = req.method().clone();
     let path = req.uri().path().to_owned();
@@ -814,7 +844,7 @@ async fn handle(
         }
         // GetTransaction may name a diverted migration; the interceptor decides,
         // and forwards (dialling the operator) only when it does not.
-        Route::GetTransaction => intercept::get_transaction(req, pool, diversion).await,
+        Route::GetTransaction => intercept::get_transaction(req, pool, diversion, budget).await,
         route @ (Route::Intercept | Route::InterceptNearMiss) => {
             if route == Route::InterceptNearMiss {
                 tracing::warn!(
@@ -824,7 +854,7 @@ async fn handle(
                     "path is not the SendTransaction method but spells it: classifying anyway"
                 );
             }
-            intercept::send_transaction(req, pool, diversion).await
+            intercept::send_transaction(req, pool, diversion, budget).await
         }
     };
 
