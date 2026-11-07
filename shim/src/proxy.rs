@@ -197,14 +197,44 @@ pub const GRPC_INVALID_ARGUMENT: u16 = 3;
 /// gets in broadcast-only mode, the same answer a server without it gives.
 pub const GRPC_UNIMPLEMENTED: u16 = 12;
 
-/// Per-stream HTTP/2 flow-control window, both legs.
+/// Per-stream HTTP/2 flow-control window on the wallet leg.
 ///
-/// The h2 default is 64 KiB, which throttles `GetBlockRange` to a crawl through
-/// a proxy and reads as a shim performance bug rather than a config default.
+/// It governs request bodies only. Response data flows under the wallet's own
+/// window.
 const STREAM_WINDOW: u32 = 2 * 1024 * 1024;
 
-/// Per-connection HTTP/2 flow-control window, both legs.
+/// Per-connection HTTP/2 flow-control window on the wallet leg.
 const CONNECTION_WINDOW: u32 = 8 * 1024 * 1024;
+
+/// Per-stream HTTP/2 flow-control window on the indexer leg.
+///
+/// This is how far the indexer may stream ahead of the wallet, and data the
+/// wallet has not taken waits inside it, in the shim. The h2 default of 64 KiB
+/// throttles `GetBlockRange` through a proxy. 256 KiB measured 6 MiB/s per
+/// stream at a 30 ms round trip to the indexer.
+const UPSTREAM_STREAM_WINDOW: u32 = 256 * 1024;
+
+/// Per-connection HTTP/2 flow-control window on the indexer leg.
+///
+/// The memory bound for a wallet that never reads its responses. Each wallet
+/// connection has one indexer connection, so the worst case is this times
+/// `MAX_INFLIGHT_CONNECTIONS`: 256 MiB. At 8 MiB it was 2 GiB, the whole
+/// enclave. The cost is throughput: every wallet stream on one connection
+/// shares it, and four streams measured 22 MiB/s together at a 30 ms round
+/// trip (148 MiB/s at 8 MiB). In production the in-enclave Caddy carries many
+/// wallets on one shim connection.
+const UPSTREAM_CONNECTION_WINDOW: u32 = 1024 * 1024;
+
+/// How much response data hyper may queue on one wallet stream before the
+/// socket takes it.
+///
+/// hyper's default is 400 KiB. A wallet that grants a large HTTP/2 window and
+/// then stops reading its socket fills that on every stream: about 40 MB per
+/// connection at 100 streams. 16 KiB is one DATA frame from the indexer, and
+/// the connection task writes it out as soon as the socket accepts it. About
+/// two frames per stream remain, 32 KiB, because hyper takes the next frame
+/// before it waits for room.
+const SEND_BUFFER: usize = 16 * 1024;
 
 /// How long a graceful shutdown waits for in-flight connections to finish.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -325,8 +355,8 @@ fn upstream_h2_builder() -> client_h2::Builder<TokioExecutor> {
     let mut builder = client_h2::Builder::new(TokioExecutor::new());
     builder
         .timer(TokioTimer::new())
-        .initial_stream_window_size(STREAM_WINDOW)
-        .initial_connection_window_size(CONNECTION_WINDOW)
+        .initial_stream_window_size(UPSTREAM_STREAM_WINDOW)
+        .initial_connection_window_size(UPSTREAM_CONNECTION_WINDOW)
         .keep_alive_interval(UPSTREAM_KEEPALIVE_INTERVAL)
         .keep_alive_timeout(UPSTREAM_KEEPALIVE_TIMEOUT)
         // Ping while idle too: an idle-but-dead connection is precisely the case
@@ -733,6 +763,7 @@ async fn serve_connection<IO>(
         server_h2::Builder::new(TokioExecutor::new())
             .initial_stream_window_size(STREAM_WINDOW)
             .initial_connection_window_size(CONNECTION_WINDOW)
+            .max_send_buf_size(SEND_BUFFER)
             .serve_connection(TokioIo::new(stream), service),
     );
     if let Err(err) = conn.await {
