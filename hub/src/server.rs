@@ -320,8 +320,8 @@ pub struct Hub {
 /// How many HTTP submissions may be in flight at once, from the body read to
 /// the answer, each holding its body and possibly a blocking task.
 ///
-/// An HTTP connection serves one request at a time, but connections are
-/// unbounded, so this caps what they can hold between them. Past it a
+/// An HTTP connection serves one request at a time, so this caps how many of
+/// the open connections (`MAX_INFLIGHT_CONNECTIONS`) hold a body. Past it a
 /// submission is refused `Full` before its body is read, and the caller is
 /// still there to retry. The Nym listener bounds itself and never takes one of
 /// these, so HTTP load cannot refuse a mixnet submission.
@@ -529,6 +529,25 @@ impl Hub {
 /// the condition to clear -- that happens when connections close.
 const ACCEPT_BACKOFF: std::time::Duration = std::time::Duration::from_millis(100);
 
+/// How many inbound connections may be open at once.
+///
+/// Each connection holds a task and a descriptor for its whole life, and
+/// hyper re-arms `header_read_timeout` on every keep-alive request, so one
+/// request every 29 s holds a connection indefinitely. Uncapped, enough of them
+/// take every descriptor the process has. The flush's publish dials and the tip
+/// reads then fail as EMFILE: each entry requeues until `MAX_REQUEUE_ATTEMPTS`
+/// drops it, and admission refuses `TipStale` (external report, @ouicate).
+///
+/// 256 matches the shim's bound. It leaves the outbound side its own room under
+/// a 1024 soft limit: each in-flight publish and lookup dials every endpoint, so
+/// three endpoints need about 3 x (64 + 64 + 64) = 576 descriptors.
+///
+/// A connection over the limit is closed at once. Parking it would rebuild the
+/// same pile one layer up, and a refused shim retries. The mixnet listener sits
+/// outside this bound, so a full cap leaves mixnet submissions and publication
+/// working.
+const MAX_INFLIGHT_CONNECTIONS: usize = 256;
+
 /// The accept() errors that say something about ONE connection, not the
 /// listener: the peer went away between the SYN and the accept, or the call was
 /// interrupted. Continuing is the only correct answer.
@@ -557,6 +576,7 @@ pub async fn serve(listener: TcpListener, hub: Hub, options: ServeOptions) -> Re
     // bound without having to know it exists. There is no configuration for it:
     // an operator who could raise it could re-open the hole.
     let lookups = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_HTTP_LOOKUPS));
+    let inflight = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_INFLIGHT_CONNECTIONS));
     tracing::info!(
         local = ?listener.local_addr().ok(),
         flush_interval = hub.params.flush_interval,
@@ -586,10 +606,22 @@ pub async fn serve(listener: TcpListener, hub: Hub, options: ServeOptions) -> Re
             }
             Err(err) => return Err(err.into()),
         };
+        // Taken before the task is spawned and held until the connection ends,
+        // so the bound covers idle keep-alive connections as well as busy ones.
+        // The peer address stays out of the log: in an enclave the parent host
+        // reads it.
+        let Ok(permit) = inflight.clone().try_acquire_owned() else {
+            tracing::warn!(
+                limit = MAX_INFLIGHT_CONNECTIONS,
+                "connection refused: every inbound connection slot is held"
+            );
+            continue;
+        };
         let hub = hub.clone();
         let options = options.clone();
         let lookups = lookups.clone();
         tokio::spawn(async move {
+            let _permit = permit;
             let io = TokioIo::new(stream);
             // `.timer()` is load-bearing, not decoration. hyper 1.x defaults
             // header_read_timeout to 30 s but silently DISABLES it (a warn!, no
