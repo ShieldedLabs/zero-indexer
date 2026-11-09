@@ -182,7 +182,7 @@ enum ReadFailure {
 }
 
 /// Read a request body into one owned buffer of at most `limit` bytes, and
-/// charge `budget` for the buffer before it grows.
+/// charge `budget` for the buffer before it grows and for any trailers.
 ///
 /// Each chunk is COPIED into the buffer and dropped at once. h2 hands over a
 /// chunk as a slice of the connection's read buffer, so a held 1-byte chunk
@@ -220,6 +220,13 @@ async fn read_body(
             }
             Err(frame) => {
                 if let Ok(more) = frame.into_trailers() {
+                    // Held as long as the body, through the divert or the
+                    // forward. hyper bounds each header block at 16 KiB, so
+                    // without a charge 100 streams on each of 256 connections
+                    // could hold 400 MiB of trailers outside the budget.
+                    charge
+                        .add(budget, header_list_size(&more))
+                        .map_err(|_| ReadFailure::BudgetSpent)?;
                     match &mut trailers {
                         Some(held) => held.extend(more),
                         None => trailers = Some(more),
@@ -233,6 +240,15 @@ async fn read_body(
         trailers,
         charge,
     })
+}
+
+/// A header block's size as HTTP/2 counts it (RFC 9113, section 6.5.2), the
+/// measure hyper's 16 KiB `max_header_list_size` bounds.
+fn header_list_size(headers: &HeaderMap) -> usize {
+    headers
+        .iter()
+        .map(|(name, value)| name.as_str().len() + value.len() + 32)
+        .sum()
 }
 
 /// The answer when the shared body budget is spent. UNAVAILABLE, because a
@@ -1187,7 +1203,20 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(read.bytes.as_ref(), b"abcde");
-        assert_eq!(read.trailers.unwrap().get("x-test").unwrap(), "1");
+        assert_eq!(read.trailers.as_ref().unwrap().get("x-test").unwrap(), "1");
+        // The buffer grew 2, 4, 8; the trailer is "x-test" + "1" + 32.
+        assert_eq!(budget.0.available_permits(), 1024 - 8 - 39);
+    }
+
+    #[tokio::test]
+    async fn trailers_past_the_budget_refuse_the_body_and_return_its_charge() {
+        let budget = BodyBudget::with_bytes(40);
+        let mut trailers = HeaderMap::new();
+        trailers.insert("x-test", "1".parse().unwrap());
+
+        let read = read_body(inbound(&[b"ab"], Some(trailers)), 64, &budget).await;
+        assert!(matches!(read, Err(ReadFailure::BudgetSpent)));
+        assert_eq!(budget.0.available_permits(), 40);
     }
 
     #[tokio::test]
