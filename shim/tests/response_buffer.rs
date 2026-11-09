@@ -189,6 +189,8 @@ async fn open_unread_streams(
             .header("te", "trailers")
             .body(BoxBody::new(Empty::<Bytes>::new()))
             .unwrap();
+        // hyper's HTTP/2 `ready()` waits for no stream slot: a request over the
+        // shim's cap queues in the client.
         sender.ready().await.unwrap();
         held.push(Box::pin(sender.send_request(request)));
     }
