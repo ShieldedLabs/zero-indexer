@@ -10113,6 +10113,7 @@ dependencies = [
  "bytes",
  "clap",
  "futures-util",
+ "h2 0.4.15",
  "hex",
  "http 1.5.0",
  "http-body 1.1.0",
