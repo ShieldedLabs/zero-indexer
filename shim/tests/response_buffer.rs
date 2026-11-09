@@ -228,10 +228,12 @@ async fn a_wallet_that_grants_no_window_pins_one_upstream_window_per_connection(
     for connections in 1..=2 {
         held.push(open_unread_streams(shim, REQUESTED_STREAMS, 0, false).await);
         let pinned = settle(&counts.produced).await;
+        // The floor shows the indexer window fills, so the test measures it.
+        let floor = connections * UPSTREAM_CONNECTION_WINDOW;
         let bound = connections * (UPSTREAM_CONNECTION_WINDOW + MAX_CONCURRENT_STREAMS * 2 * CHUNK);
         assert!(
-            pinned <= bound,
-            "{connections} connection(s) pinned {pinned} bytes, over {bound}"
+            (floor..=bound).contains(&pinned),
+            "{connections} connection(s) pinned {pinned} bytes, outside {floor}..={bound}"
         );
         assert_eq!(
             counts.requests.load(Ordering::Relaxed),
@@ -251,6 +253,11 @@ async fn a_wallet_that_stops_reading_its_socket_pins_a_frame_per_stream() {
     // hyper's default send buffer let this pin 400 KiB per stream.
     let _held = open_unread_streams(shim, REQUESTED_STREAMS, i32::MAX as u32, true).await;
     let pinned = settle(&counts.produced).await;
+    // The floor shows every served stream pulled at least one frame.
+    let floor = counts.requests.load(Ordering::Relaxed) * CHUNK;
     let bound = UPSTREAM_CONNECTION_WINDOW + MAX_CONCURRENT_STREAMS * 3 * CHUNK + KERNEL_SLACK;
-    assert!(pinned <= bound, "pinned {pinned} bytes, over {bound}");
+    assert!(
+        floor > 0 && (floor..=bound).contains(&pinned),
+        "pinned {pinned} bytes, outside {floor}..={bound}"
+    );
 }
