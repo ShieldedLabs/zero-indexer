@@ -222,8 +222,8 @@ async fn read_body(
                 if let Ok(more) = frame.into_trailers() {
                     // Held as long as the body, through the divert or the
                     // forward. hyper bounds each header block at 16 KiB, so
-                    // without a charge 100 streams on each of 256 connections
-                    // could hold 400 MiB of trailers outside the budget.
+                    // without a charge 32 streams on each of 256 connections
+                    // could hold 128 MiB of trailers outside the budget.
                     charge
                         .add(budget, header_list_size(&more))
                         .map_err(|_| ReadFailure::BudgetSpent)?;
