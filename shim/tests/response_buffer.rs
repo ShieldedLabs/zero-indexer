@@ -15,7 +15,9 @@
 //!
 //! Both bounds also count one 16 KiB chunk per stream in the shim and one in
 //! the fake indexer: hyper takes the next chunk from a body before it waits for
-//! window to send it.
+//! window to send it. That part grows with the streams on a connection, so
+//! the wallet asks for hyper's default of 200 and the shim's stream cap must
+//! hold it to 32.
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -44,29 +46,43 @@ const MIB: usize = 1024 * 1024;
 /// `UPSTREAM_CONNECTION_WINDOW` in `src/proxy.rs`.
 const UPSTREAM_CONNECTION_WINDOW: usize = MIB;
 
+/// `MAX_CONCURRENT_STREAMS` in `src/proxy.rs`.
+const MAX_CONCURRENT_STREAMS: usize = 32;
+
+/// The streams the wallet asks for on each connection: hyper's default cap.
+const REQUESTED_STREAMS: usize = 200;
+
 /// Room for the kernel's socket buffers on the wallet's connection, which the
 /// socket-stall test fills too. Linux autotunes a send buffer to 4 MiB.
 const KERNEL_SLACK: usize = 8 * MIB;
 
 const GET_BLOCK_RANGE: &str = "/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetBlockRange";
 
-/// An indexer whose every response body is endless. `produced` counts the bytes
-/// the shim has pulled from it.
-async fn spawn_firehose_backend(produced: Arc<AtomicUsize>) -> SocketAddr {
+#[derive(Default)]
+struct Counts {
+    /// Calls that reached the indexer.
+    requests: AtomicUsize,
+    /// Bytes the shim has pulled from the indexer.
+    produced: AtomicUsize,
+}
+
+/// An indexer whose every response body is endless.
+async fn spawn_firehose_backend(counts: Arc<Counts>) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
-            let produced = produced.clone();
+            let counts = counts.clone();
             tokio::spawn(async move {
                 let _ = server_h2::Builder::new(TokioExecutor::new())
                     .serve_connection(
                         TokioIo::new(stream),
                         service_fn(move |_req: Request<Incoming>| {
-                            let produced = produced.clone();
+                            let counts = counts.clone();
+                            counts.requests.fetch_add(1, Ordering::Relaxed);
                             async move {
                                 let chunks = futures_util::stream::repeat_with(move || {
-                                    produced.fetch_add(CHUNK, Ordering::Relaxed);
+                                    counts.produced.fetch_add(CHUNK, Ordering::Relaxed);
                                     Ok::<_, Infallible>(Frame::data(Bytes::from_static(&ZEROS)))
                                 });
                                 let mut resp = Response::new(StreamBody::new(chunks));
@@ -201,38 +217,40 @@ async fn settle(produced: &AtomicUsize) -> usize {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_wallet_that_grants_no_window_pins_one_upstream_window_per_connection() {
-    let produced = Arc::new(AtomicUsize::new(0));
-    let backend = spawn_firehose_backend(produced.clone()).await;
+    let counts = Arc::new(Counts::default());
+    let backend = spawn_firehose_backend(counts.clone()).await;
     let shim = spawn_shim(backend).await;
 
     // A stream window of zero: the shim can forward nothing to this wallet, so
-    // every byte pulled from the indexer stays inside the shim. Eight streams
-    // are enough to fill the connection window, and a second connection shows
-    // the bound is per connection.
-    let streams = 8;
+    // every byte pulled from the indexer stays inside the shim. A second
+    // connection shows the bound is per connection.
     let mut held = Vec::new();
     for connections in 1..=2 {
-        held.push(open_unread_streams(shim, streams, 0, false).await);
-        let pinned = settle(&produced).await;
-        let bound = connections * (UPSTREAM_CONNECTION_WINDOW + streams * 2 * CHUNK);
+        held.push(open_unread_streams(shim, REQUESTED_STREAMS, 0, false).await);
+        let pinned = settle(&counts.produced).await;
+        let bound = connections * (UPSTREAM_CONNECTION_WINDOW + MAX_CONCURRENT_STREAMS * 2 * CHUNK);
         assert!(
             pinned <= bound,
             "{connections} connection(s) pinned {pinned} bytes, over {bound}"
+        );
+        assert_eq!(
+            counts.requests.load(Ordering::Relaxed),
+            connections * MAX_CONCURRENT_STREAMS,
+            "{connections} connection(s) asking for {REQUESTED_STREAMS} streams each"
         );
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_wallet_that_stops_reading_its_socket_pins_a_frame_per_stream() {
-    let produced = Arc::new(AtomicUsize::new(0));
-    let backend = spawn_firehose_backend(produced.clone()).await;
+    let counts = Arc::new(Counts::default());
+    let backend = spawn_firehose_backend(counts.clone()).await;
     let shim = spawn_shim(backend).await;
 
     // The largest window HTTP/2 allows, and a socket that is never read.
     // hyper's default send buffer let this pin 400 KiB per stream.
-    let streams = 100;
-    let _held = open_unread_streams(shim, streams, i32::MAX as u32, true).await;
-    let pinned = settle(&produced).await;
-    let bound = UPSTREAM_CONNECTION_WINDOW + streams * 3 * CHUNK + KERNEL_SLACK;
+    let _held = open_unread_streams(shim, REQUESTED_STREAMS, i32::MAX as u32, true).await;
+    let pinned = settle(&counts.produced).await;
+    let bound = UPSTREAM_CONNECTION_WINDOW + MAX_CONCURRENT_STREAMS * 3 * CHUNK + KERNEL_SLACK;
     assert!(pinned <= bound, "pinned {pinned} bytes, over {bound}");
 }

@@ -217,9 +217,9 @@ const UPSTREAM_STREAM_WINDOW: u32 = 256 * 1024;
 /// Per-connection HTTP/2 flow-control window on the indexer leg.
 ///
 /// The memory bound for a wallet that never reads its responses. Each wallet
-/// connection has one indexer connection, so the worst case is this times
-/// `MAX_INFLIGHT_CONNECTIONS`: 256 MiB. At 8 MiB it was 2 GiB, the whole
-/// enclave. The cost is throughput: every wallet stream on one connection
+/// connection has one indexer connection, so this times
+/// `MAX_INFLIGHT_CONNECTIONS` is 256 MiB, and `MAX_CONCURRENT_STREAMS` bounds
+/// the rest. At 8 MiB it was 2 GiB, the whole enclave. The cost is throughput: every wallet stream on one connection
 /// shares it, and four streams measured 22 MiB/s together at a 30 ms round
 /// trip (148 MiB/s at 8 MiB). In production the in-enclave Caddy carries many
 /// wallets on one shim connection.
@@ -229,11 +229,11 @@ const UPSTREAM_CONNECTION_WINDOW: u32 = 1024 * 1024;
 /// socket takes it.
 ///
 /// hyper's default is 400 KiB. A wallet that grants a large HTTP/2 window and
-/// then stops reading its socket fills that on every stream: about 40 MB per
-/// connection at 100 streams. 16 KiB is one DATA frame from the indexer, and
-/// the connection task writes it out as soon as the socket accepts it. About
-/// two frames per stream remain, 32 KiB, because hyper takes the next frame
-/// before it waits for room.
+/// then stops reading its socket fills that on every stream: about 80 MB per
+/// connection at hyper's 200 streams. 16 KiB is one DATA frame from the
+/// indexer, and the connection task writes it out as soon as the socket accepts
+/// it. About two frames per stream remain, 32 KiB, because hyper takes the next
+/// frame before it waits for room.
 const SEND_BUFFER: usize = 16 * 1024;
 
 /// How long a graceful shutdown waits for in-flight connections to finish.
@@ -250,7 +250,6 @@ const DIAL_BACKOFF: Duration = Duration::from_millis(100);
 /// connection with no error and no timeout of its own.
 const DIAL_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// How long the accept loop pauses after a file-descriptor exhaustion error, so
 /// How many wallet connections may be in flight at once.
 ///
 /// The per-request buffer is already capped at `MAX_SEND_TX_BYTES` (4 MiB), but
@@ -270,6 +269,20 @@ const DIAL_TIMEOUT: Duration = Duration::from_secs(5);
 /// which is the behaviour it already has for any dropped connection.
 const MAX_INFLIGHT_CONNECTIONS: usize = 256;
 
+/// How many HTTP/2 streams one wallet connection may carry at once.
+///
+/// hyper's default is 200. A wallet that never reads its responses leaves about
+/// 32 KiB on each stream (`SEND_BUFFER`) on top of the indexer leg's window, so
+/// one connection holds at most 1 MiB + 32 x 32 KiB = 2 MiB, and
+/// `MAX_INFLIGHT_CONNECTIONS` of them hold 512 MiB. With the 256 MiB budget for
+/// buffered request bodies, that is 768 MiB of the 2048 MB enclave. At 200
+/// streams it was 1.8 GiB for response data alone. The shim serves 8,192
+/// streams at once. In production the in-enclave Caddy carries many wallets on
+/// one shim connection, and Go's HTTP/2 client opens another connection when
+/// one reaches this limit.
+const MAX_CONCURRENT_STREAMS: u32 = 32;
+
+/// How long the accept loop pauses after a file-descriptor exhaustion error, so
 /// it does not spin at full tilt while the process is out of descriptors.
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 
@@ -763,6 +776,7 @@ async fn serve_connection<IO>(
         server_h2::Builder::new(TokioExecutor::new())
             .initial_stream_window_size(STREAM_WINDOW)
             .initial_connection_window_size(CONNECTION_WINDOW)
+            .max_concurrent_streams(MAX_CONCURRENT_STREAMS)
             .max_send_buf_size(SEND_BUFFER)
             .serve_connection(TokioIo::new(stream), service),
     );
