@@ -6,12 +6,13 @@
 //! `SendTransaction` stream buffered up to 4 MiB for up to 30 s. One connection
 //! pinned about 800 MiB (external report, @ouicate).
 //!
-//! These tests drive that multiplier directly: one connection, every stream it
-//! may open, each stream sending a full 4 MiB body and never finishing it. The
-//! budget (256 MiB, `intercept::BODY_BUDGET_BYTES`) holds at most 64 such
-//! bodies, so a 100-stream flood on ONE connection must be refused in part,
-//! promptly, as UNAVAILABLE. Before the budget every stream waited out the 30 s
-//! read timeout instead.
+//! These tests drive that multiplier directly: three connections, every stream
+//! each may open (32, `proxy::MAX_CONCURRENT_STREAMS`), each stream sending a
+//! full 4 MiB body and never finishing it. One connection holds at most 128 MiB
+//! of bodies, so the budget bounds the total across connections. The budget
+//! (256 MiB, `intercept::BODY_BUDGET_BYTES`) holds at most 64 such bodies, so a
+//! 96-stream flood must be refused in part, promptly, as UNAVAILABLE. Before
+//! the budget every stream waited out the 30 s read timeout instead.
 //!
 //! This file is its own test binary, so its floods share the budget with
 //! nothing else.
@@ -41,7 +42,10 @@ use common::{
 use zero_indexer_shim::proxy::SEND_TRANSACTION;
 
 /// Mirrors `proxy::MAX_CONCURRENT_STREAMS`: every stream one connection may open.
-const STREAMS: usize = 100;
+const STREAMS: usize = 32;
+
+/// Connections in one flood: three connections' streams pass the budget.
+const CONNECTIONS: usize = 3;
 
 /// Mirrors `intercept::MAX_SEND_TX_BYTES`: the most one body may buffer.
 const BODY: usize = 4 * 1024 * 1024;
@@ -82,14 +86,14 @@ fn held_body(bytes: Bytes) -> BoxBody<Bytes, Infallible> {
 }
 
 /// Open `n` SendTransaction streams on one connection, each delivering `bytes`
-/// and never finishing. Every reply's gRPC status arrives on the receiver.
+/// and never finishing. Every reply's gRPC status arrives on `tx`.
 async fn flood(
     sender: &mut client_h2::SendRequest<BoxBody<Bytes, Infallible>>,
     shim: SocketAddr,
     n: usize,
     bytes: Bytes,
-) -> (mpsc::UnboundedReceiver<i32>, Vec<JoinHandle<()>>) {
-    let (tx, rx) = mpsc::unbounded_channel();
+    tx: &mpsc::UnboundedSender<i32>,
+) -> Vec<JoinHandle<()>> {
     let mut streams = Vec::with_capacity(n);
     for _ in 0..n {
         let request = Request::builder()
@@ -114,7 +118,7 @@ async fn flood(
             }
         }));
     }
-    (rx, streams)
+    streams
 }
 
 /// Collect replies until at least `want` have arrived or the deadline passes,
@@ -137,18 +141,28 @@ async fn replies(rx: &mut mpsc::UnboundedReceiver<i32>, want: usize) -> Vec<i32>
     statuses
 }
 
-/// Flood one connection and check the budget's answer. Returns the connection's
-/// driver and streams so the caller decides when they end.
-async fn flood_one_connection(shim: SocketAddr) -> (JoinHandle<()>, Vec<JoinHandle<()>>) {
-    let (mut sender, driver) = connect(shim).await;
-    let (mut rx, streams) = flood(&mut sender, shim, STREAMS, Bytes::from(vec![0u8; BODY])).await;
+/// Flood `CONNECTIONS` connections and check the budget's answer. Returns the
+/// connections' drivers and streams so the caller decides when they end.
+async fn flood_connections(shim: SocketAddr) -> (Vec<JoinHandle<()>>, Vec<JoinHandle<()>>) {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let body = Bytes::from(vec![0u8; BODY]);
+    let mut senders = Vec::new();
+    let mut drivers = Vec::new();
+    let mut streams = Vec::new();
+    for _ in 0..CONNECTIONS {
+        let (mut sender, driver) = connect(shim).await;
+        streams.extend(flood(&mut sender, shim, STREAMS, body.clone(), &tx).await);
+        senders.push(sender);
+        drivers.push(driver);
+    }
 
-    let over = STREAMS - BODIES_IN_BUDGET;
+    let total = CONNECTIONS * STREAMS;
+    let over = total - BODIES_IN_BUDGET;
     let statuses = replies(&mut rx, over).await;
     assert!(
         statuses.len() >= over,
-        "{STREAMS} streams of {BODY} bytes on one connection got {} replies within {DEADLINE:?}; \
-         at least {over} must be refused, or the connection buffers more than the budget",
+        "{total} streams of {BODY} bytes on {CONNECTIONS} connections got {} replies within \
+         {DEADLINE:?}; at least {over} must be refused, or the shim buffers more than the budget",
         statuses.len()
     );
     assert!(
@@ -156,33 +170,31 @@ async fn flood_one_connection(shim: SocketAddr) -> (JoinHandle<()>, Vec<JoinHand
         "every refusal must be UNAVAILABLE, which a wallet retries: got {statuses:?}"
     );
     assert!(
-        statuses.len() < STREAMS,
+        statuses.len() < total,
         "every stream was refused: the budget served none of them, so it is not being returned"
     );
-    (driver, streams)
+    (drivers, streams)
 }
 
 #[tokio::test]
-async fn one_connection_cannot_buffer_past_the_budget_and_the_budget_returns() {
+async fn a_flood_cannot_buffer_past_the_budget_and_the_budget_returns() {
     let backend = spawn_counting_backend(Arc::new(AtomicUsize::new(0))).await;
     let shim = spawn_forward_only_shim(backend).await;
 
-    let (driver, streams) = flood_one_connection(shim).await;
+    let (drivers, streams) = flood_connections(shim).await;
 
-    // Drop the connection with every held stream on it. Each handler's body
+    // Drop the connections with every held stream on them. Each handler's body
     // read then fails, and its share of the budget comes back.
-    driver.abort();
-    for stream in streams {
-        stream.abort();
+    for task in drivers.into_iter().chain(streams) {
+        task.abort();
     }
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // The same flood again is served the same way: the first flood's share
     // came back. A leak would refuse all of it.
-    let (driver, streams) = flood_one_connection(shim).await;
-    driver.abort();
-    for stream in streams {
-        stream.abort();
+    let (drivers, streams) = flood_connections(shim).await;
+    for task in drivers.into_iter().chain(streams) {
+        task.abort();
     }
 }
 
@@ -194,8 +206,9 @@ async fn streams_that_send_nothing_hold_no_budget() {
     let backend = spawn_counting_backend(Arc::new(AtomicUsize::new(0))).await;
     let shim = spawn_forward_only_shim(backend).await;
 
+    let (tx, _rx) = mpsc::unbounded_channel();
     let (mut sender, driver) = connect(shim).await;
-    let (_rx, streams) = flood(&mut sender, shim, STREAMS, Bytes::new()).await;
+    let streams = flood(&mut sender, shim, STREAMS, Bytes::new(), &tx).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     let mut honest = connect_h2(shim).await;
