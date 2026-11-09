@@ -111,7 +111,7 @@ const BODY_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30
 /// slow, nearly empty stream takes nothing from an honest wallet, whose
 /// transaction is tens of kilobytes.
 ///
-/// 256 MiB holds 64 maximum-size transactions at once (each charges its body
+/// 256 MiB holds 32 maximum-size transactions at once (each charges its body
 /// and its decoded copy), or thousands of ordinary ones. To keep it spent, a
 /// client must deliver about 256 MiB every 30 s. Not configurable, for the same
 /// reason as `MAX_INFLIGHT_CONNECTIONS`.
@@ -279,7 +279,7 @@ pub(crate) async fn send_transaction(
     let Buffered {
         bytes: frame,
         trailers,
-        mut charge,
+        charge: _charge,
     } = match tokio::time::timeout(BODY_READ_TIMEOUT, read).await {
         Ok(Ok(buffered)) => buffered,
         Ok(Err(failure)) => return Ok(body_read_failed(failure)),
@@ -298,14 +298,16 @@ pub(crate) async fn send_transaction(
         }
     };
 
-    let (inspection, tx_data) = inspect(&parts.headers, &frame);
     // The decoded transaction is a second copy of most of the body, and it
-    // lives as long as the body does, through the divert or the forward.
-    if let Some(tx_data) = &tx_data {
-        if charge.add(&budget, tx_data.len()).is_err() {
-            return Ok(budget_spent());
-        }
+    // lives as long as the body does, through the divert or the forward. Its
+    // bound, the body's length, is charged before decoding, so a refused
+    // request makes no copy. A body that yields no transaction returns it.
+    let mut copy = Charge::default();
+    if copy.add(&budget, frame.len()).is_err() {
+        return Ok(budget_spent());
     }
+    let (inspection, tx_data) = inspect(&parts.headers, &frame);
+    let _copy = tx_data.is_some().then_some(copy);
     log_verdict(&inspection, &frame);
 
     // A network upgrade looks exactly like garbage to a shim built before it, and
