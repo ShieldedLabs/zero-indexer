@@ -250,7 +250,11 @@ async fn a_wallet_that_stops_reading_its_socket_pins_a_frame_per_stream() {
     let shim = spawn_shim(backend).await;
 
     // The largest window HTTP/2 allows, and a socket that is never read.
-    // hyper's default send buffer let this pin 400 KiB per stream.
+    // hyper's default send buffer let this pin 400 KiB per stream. The stall
+    // starts before the handshake, which only writes: a wallet that read even
+    // once would pull response data into its own window. It never sees the
+    // shim's SETTINGS, so it sends all 200 HEADERS and the shim refuses the
+    // streams over its cap.
     let _held = open_unread_streams(shim, REQUESTED_STREAMS, i32::MAX as u32, true).await;
     let pinned = settle(&counts.produced).await;
     // The floor shows every served stream pulled at least one frame.
