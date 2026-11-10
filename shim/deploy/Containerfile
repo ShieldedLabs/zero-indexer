@@ -46,16 +46,11 @@
 #
 # Build context = a partial mirror of the zero repo (assemble via assemble.sh):
 #   zeronym/shim/                 the crate, including this file under deploy/
-#   zebra/Cargo.toml              workspace root zebra-chain inherits from
-#   zebra/zebra-chain/            the vendored Zcash parser (the path dep)
-#   zebra/zebra-test/             optional dep of zebra-chain, manifest only
-#   zaino/Cargo.toml              workspace root zaino-proto inherits from
-#   zaino/packages/zaino-proto/   the CompactTxStreamer codegen (the path dep)
 #   zeronym/vendor/nym-upgrade-mode-check/  the crypto-common [patch] target
 #   zeronym/vendor/webpki-roots-0.2{4.0,5.4}/  the eMudhra-distrust [patch] targets
-# The layout is the repo's own, so the shim's `../../zebra/zebra-chain`,
-# `../../zaino/packages/zaino-proto` and `../vendor/*` path references resolve
-# unchanged. No manifest is edited, anywhere.
+# The layout is the repo's own, so the shim's `../vendor/*` path references
+# resolve unchanged. No manifest is edited, anywhere. zebra-chain and
+# zaino-proto come from crates.io, pinned by the committed Cargo.lock.
 #
 # BUILD THIS FILE FROM INSIDE THE CONTEXT, not from the working tree:
 #   docker build -f "$CTX/zeronym/shim/deploy/Containerfile" "$CTX" ...
@@ -128,10 +123,7 @@ ENV SOURCE_DATE_EPOCH=1
 # reimplementation. It links clean without them. If a future dependency breaks
 # the link, restore the reference's flags before debugging anything else.
 
-# Repo-shaped context. Three COPYs rather than one so the layer cache is
-# invalidated by the piece that actually changed.
-COPY zebra/ ./zebra/
-COPY zaino/ ./zaino/
+# Repo-shaped context.
 COPY zeronym/ ./zeronym/
 
 WORKDIR /usr/src/app/zeronym/shim

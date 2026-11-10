@@ -45,10 +45,10 @@ mixnet-localnet = ["mixnet-driver", "dep:nym-topology"]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(zcash_unstable, values("zfuture"))'] }
 
 [dependencies]
-# The real Zcash parser, vendored, same as the shim. The hub re-parses every
+# The real Zcash parser, at the shim's exact pin. The hub re-parses every
 # migration it receives rather than trusting the shim, so it needs exactly the
 # parser the shim used.
-zebra-chain = { path = "../../zebra/zebra-chain" }
+zebra-chain = "=12.0.0"
 
 # The Halo2 verifier behind admission (src/admission.rs): a submission that
 # touches Orchard must carry proofs that verify, so junk costs its sender one
@@ -61,9 +61,9 @@ zcash_protocol = "0.10"
 
 # CompactTxStreamer types for the indexer hop (SendTransaction, GetLightdInfo).
 # default-features = false is REQUIRED, not tidiness: the default "heavy" feature
-# pulls a SECOND zebra-chain from crates.io alongside our vendored path dep, and
-# its build.rs regenerates the committed protos whenever protoc is reachable.
-zaino-proto = { path = "../../zaino/packages/zaino-proto", default-features = false }
+# pulls a SECOND zebra-chain from crates.io alongside the pin above, and its
+# build.rs regenerates the committed protos whenever protoc is reachable.
+zaino-proto = { version = "=0.6.0", default-features = false }
 prost = "0.14"
 
 clap = { version = "4", features = ["derive", "env"] }

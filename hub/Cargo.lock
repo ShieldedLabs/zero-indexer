@@ -6059,7 +6059,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.5",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6611,7 +6611,7 @@ dependencies = [
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8821,7 +8821,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9275,6 +9275,8 @@ dependencies = [
 [[package]]
 name = "zaino-proto"
 version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "124a4ea15840dcbaab6253bb43eae9d53f644ecde942f618af30b0034e6db45a"
 dependencies = [
  "prost 0.14.4",
  "tonic",
@@ -9428,7 +9430,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-chain"
-version = "11.3.0"
+version = "12.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b270bc7ec8f48cf58d14368c3521201947df137fc0e52633e81297250b2e3e0e"
 dependencies = [
  "bech32",
  "bitflags 2.13.1",

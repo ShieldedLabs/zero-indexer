@@ -100,17 +100,6 @@ else
 fi
 
 echo
-echo "=== vendored subtrees must be untouched ==="
-dirty=$(git -C "$ZERO_ROOT" status --porcelain zebra/ zaino/)
-if [ -z "$dirty" ]; then
-	echo "zebra/ and zaino/ clean"
-else
-	echo "DIRTY, this is a build failure, not a nuisance:"
-	echo "$dirty"
-	fail=1
-fi
-
-echo
 if [ "$fail" = 0 ]; then
 	echo "zero-indexer-shim: REPRODUCES"
 else

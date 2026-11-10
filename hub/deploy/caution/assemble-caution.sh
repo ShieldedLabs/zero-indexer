@@ -467,8 +467,8 @@ if [ -d "$DEST/.caution" ] || [ -d "$DEST/.git" ]; then
 	if [ -d "$DEST/.git" ]; then mv "$DEST/.git" "$KEEP/.git"; fi
 fi
 
-# The build context: the hub crate plus the parts of zebra/ its path dependency
-# needs. Identical to what the reproducibility check builds, because it is the
+# The build context: the hub crate plus the vendor/ crates its [patch] sections
+# name. Identical to what the reproducibility check builds, because it is the
 # same script.
 sh "$ZERO_ROOT/zeronym/hub/deploy/assemble.sh" "$DEST"
 
