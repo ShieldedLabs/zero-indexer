@@ -1124,6 +1124,32 @@ mod tests {
         assert_eq!(1020 / n, 51, "a new epoch exactly at the multiple");
     }
 
+    /// One honest indexer polled across three hours of real post-NU7 blocks.
+    /// Each poll answers with the last block mined by then.
+    #[test]
+    fn an_honest_indexer_replayed_over_real_post_nu7_blocks_is_followed() {
+        let blocks = tip_guard::tests::mainnet_nu7_blocks();
+        let (first, last) = (blocks[0].1, blocks[blocks.len() - 1].1);
+        let tip = TipTracker::new(TipGuard::Mainnet);
+        let start = Instant::now();
+
+        let mut mined = 0;
+        for elapsed in (0..=last - first).step_by(POLL_INTERVAL.as_secs() as usize) {
+            let unix = first + elapsed;
+            while blocks.get(mined + 1).is_some_and(|&(_, time)| time <= unix) {
+                mined += 1;
+            }
+            let honest = blocks[mined].0;
+            tip.observe_at(&[honest], start + Duration::from_secs(elapsed), Some(unix));
+            assert_eq!(
+                tip.observed_height(),
+                honest,
+                "the honest tip was dropped {elapsed} s in"
+            );
+        }
+        assert!(tip.is_ready(), "the warm-up never ended");
+    }
+
     // ---- flush against a real ChainClient ------------------------------------
     //
     // `ChainClient` is not a trait, so it is faked the way the integration tests

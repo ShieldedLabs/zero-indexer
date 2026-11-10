@@ -55,6 +55,14 @@ const V6_TRANSPARENT_ONLY: &[u8] = include_bytes!("fixtures/v6_transparent_only.
 /// spends nothing: a genuine pass-through.
 const V4_COINBASE_HEX: &str = "0400008085202f89010000000000000000000000000000000000000000000000000000000000000000ffffffff0503b0e72100ffffffff04e8bbe60e000000001976a914ba92ff06081d5ff6542af8d3b2d209d29ba6337c88ac40787d010000000017a914931fec54c1fea86e574462cc32013f5400b891298738c94d010000000017a914c7a4285ed7aed78d8c0e28d7f1839ccb4046ab0c87286bee000000000017a914d45cb1adffb5215a42720532a076f02c7c778c908700000000b0e721000000000000000000000000";
 
+/// A real mainnet migration from block 3,555,662, after NU7: V6 on the NU7
+/// branch ID, two Orchard actions at +715_003 and an Ironwood bundle at -695_003.
+const MAINNET_NU7_MIGRATION: &[u8] = include_bytes!("fixtures/mainnet_nu7_migration.bin");
+
+/// A real mainnet transaction from block 3,543,405, the first under NU7: V6 on
+/// the NU7 branch ID with an Ironwood bundle and nothing else.
+const MAINNET_NU7_IRONWOOD_ONLY: &[u8] = include_bytes!("fixtures/mainnet_nu7_ironwood_only.bin");
+
 #[test]
 fn v6_orchard_actions_into_ironwood_is_a_migration() {
     let evidence = classify_with_evidence(V6_MIGRATION);
@@ -147,6 +155,53 @@ fn an_ironwood_only_transaction_is_a_pass_through() {
     assert_eq!(evidence.orchard_vb, 0);
     assert_eq!(evidence.ironwood_vb, -240_000, "value entering Ironwood");
     assert!(!evidence.class.treat_as_migration());
+}
+
+#[test]
+fn a_real_nu7_migration_is_a_migration() {
+    let evidence = classify_with_evidence(MAINNET_NU7_MIGRATION);
+    println!("{evidence:?}");
+
+    assert!(
+        !evidence.is_unrecognised_branch(),
+        "the NU7 branch ID is known"
+    );
+    assert_eq!(evidence.class, Class::Migration);
+    assert_eq!(evidence.version, "V6");
+    assert_eq!(evidence.orchard_actions, 2);
+    assert_eq!(evidence.orchard_vb, 715_003);
+    assert_eq!(evidence.ironwood_vb, -695_003);
+    assert_eq!(evidence.expiry_height, Some(3_555_777));
+    assert_eq!(evidence.len, MAINNET_NU7_MIGRATION.len());
+    assert!(evidence.error.is_none());
+}
+
+#[test]
+fn a_real_nu7_ironwood_only_transaction_is_a_pass_through() {
+    let evidence = classify_with_evidence(MAINNET_NU7_IRONWOOD_ONLY);
+    println!("{evidence:?}");
+
+    // On a parser that predates NU7 this is unparseable, and unparseable is
+    // diverted, so every ordinary send went to the hub.
+    assert!(
+        !evidence.is_unrecognised_branch(),
+        "the NU7 branch ID is known"
+    );
+    assert_eq!(evidence.class, Class::PassThrough);
+    assert_eq!(evidence.version, "V6");
+    assert_eq!(evidence.orchard_actions, 0, "no Orchard bundle at all");
+    assert_eq!(evidence.ironwood_vb, 20_000, "the fee leaves Ironwood");
+    assert_eq!(evidence.expiry_height, Some(3_543_525));
+    assert!(evidence.error.is_none());
+}
+
+#[test]
+fn a_real_nu7_migration_gets_its_txid_for_the_wallet() {
+    // An empty txid here is what a mixnet wallet was handed as a success.
+    assert_eq!(
+        zero_indexer_shim::nym::local_txid(MAINNET_NU7_MIGRATION),
+        "0f7de50277a5fa67cbd3f6c9df4e8edfca561879b8784f46356c931300764773"
+    );
 }
 
 #[test]

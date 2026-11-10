@@ -65,10 +65,22 @@ pub fn max_new_blocks(elapsed: Duration) -> u32 {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     const DAY: u64 = 24 * 60 * 60;
+
+    /// 460 mainnet blocks in a row, mined on 2026-11-09 after NU7 cut the
+    /// spacing to 25 s. One `height unix_time` per line.
+    pub(crate) fn mainnet_nu7_blocks() -> Vec<(u32, u64)> {
+        include_str!("../tests/fixtures/mainnet_nu7_block_times.txt")
+            .lines()
+            .map(|line| {
+                let (height, time) = line.split_once(' ').unwrap();
+                (height.parse().unwrap(), time.parse().unwrap())
+            })
+            .collect()
+    }
 
     #[test]
     fn the_band_at_the_anchor_runs_from_it_to_the_fixed_slack_above() {
@@ -132,6 +144,33 @@ mod tests {
         for secs in (0..=2 * DAY).step_by(75) {
             let mean = (secs / TARGET_BLOCK_SECS) as u32;
             assert!(max_new_blocks(Duration::from_secs(secs)) > mean);
+        }
+    }
+
+    #[test]
+    fn every_real_post_nu7_height_is_inside_the_band_at_its_block_time() {
+        for (height, time) in mainnet_nu7_blocks() {
+            let (low, high) = mainnet_band(time).unwrap();
+            assert!(
+                (low..=high).contains(&height),
+                "real height {height} at {time} is outside the band {low}..={high}"
+            );
+        }
+    }
+
+    #[test]
+    fn no_real_post_nu7_climb_is_faster_than_max_new_blocks_allows() {
+        let blocks = mainnet_nu7_blocks();
+        for (i, &(from, start)) in blocks.iter().enumerate() {
+            for &(to, end) in &blocks[i + 1..] {
+                let secs = end.saturating_sub(start);
+                let allowed = max_new_blocks(Duration::from_secs(secs));
+                assert!(
+                    to - from <= allowed,
+                    "mainnet made {} blocks in {secs} s from {from}, and {allowed} are allowed",
+                    to - from
+                );
+            }
         }
     }
 }

@@ -269,6 +269,9 @@ pub(crate) mod tests {
     const IRONWOOD_ONLY: &[u8] = include_bytes!("../../shim/tests/fixtures/v6_ironwood_only.bin");
     const TRANSPARENT_ONLY: &[u8] =
         include_bytes!("../../shim/tests/fixtures/v6_transparent_only.bin");
+    // A real migration from mainnet block 3,555,662, after NU7.
+    const MAINNET_NU7_MIGRATION: &[u8] =
+        include_bytes!("../../shim/tests/fixtures/mainnet_nu7_migration.bin");
 
     #[test]
     fn a_proven_migration_verifies_in_the_proven_lane() {
@@ -281,6 +284,19 @@ pub(crate) mod tests {
         );
         assert_eq!(inspected.transparent_outputs, 1);
         assert!(inspected.txid.is_some());
+        assert!(inspected.verify());
+    }
+
+    #[test]
+    fn a_real_nu7_migration_verifies_in_the_proven_lane() {
+        let inspected = inspect(MAINNET_NU7_MIGRATION);
+        assert_eq!(
+            inspected.txid.as_deref(),
+            Some("0f7de50277a5fa67cbd3f6c9df4e8edfca561879b8784f46356c931300764773")
+        );
+        assert_eq!(inspected.expiry, Some(3_555_777));
+        assert_eq!(inspected.lane, Lane::Proven);
+        assert_eq!(inspected.orchard_nullifiers.len(), 2);
         assert!(inspected.verify());
     }
 
