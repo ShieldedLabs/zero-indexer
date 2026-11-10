@@ -67,9 +67,10 @@ module types {
     }
 
   /// Whether the hub can read Orchard proofs in `payload`, and so can burn
-  /// them: it parses and touches Orchard. Only such a payload has bundle keys.
+  /// them: it parses, touches Orchard and has no transparent inputs. Only
+  /// such a payload has bundle keys.
   pure def hasProof(payload: Payload): bool =
-    payload.class == OrchardTouching and isSome(payload.txid)
+    payload.class == OrchardTouching and isSome(payload.txid) and payload.spends == Set()
 
   /// Whether two payloads are different bytes with the same transaction id.
   pure def areTwins(left: Payload, right: Payload): bool =
