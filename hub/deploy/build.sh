@@ -35,7 +35,7 @@ mkdir -p "$OUT"
 # Not the working-tree copy: the Containerfile is the whole definition of the
 # build, so building the working-tree copy would mean an auditor at the recorded
 # commit could unknowingly build a different recipe.
-RECIPE="$CTX/zeronym/hub/deploy/Containerfile"
+RECIPE="$CTX/hub/deploy/Containerfile"
 
 echo "Extracting the binary from the export stage..."
 docker build -f "$RECIPE" "$CTX" \

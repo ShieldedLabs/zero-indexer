@@ -535,7 +535,7 @@ if [ -d "$KEEP/.git" ]; then mv "$KEEP/.git" "$DEST/.git"; fi
 # working tree: the context copy came from `git archive HEAD`, so the root copy
 # inherits that provenance. Copying from $HERE/../Containerfile instead would
 # reintroduce exactly the hole assemble.sh closes, and would do it silently.
-NESTED="$DEST/zeronym/shim/deploy/Containerfile"
+NESTED="$DEST/shim/deploy/Containerfile"
 test -f "$NESTED" || { echo "error: no Containerfile in the assembled context" >&2; exit 1; }
 cp "$NESTED" "$DEST/Containerfile"
 

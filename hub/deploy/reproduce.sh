@@ -42,7 +42,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 
 # The recipe from inside the context (git archive HEAD), not the working tree.
-RECIPE="$CTX/zeronym/hub/deploy/Containerfile"
+RECIPE="$CTX/hub/deploy/Containerfile"
 
 for n in 1 2; do
 	echo "==> cold build $n of 2"

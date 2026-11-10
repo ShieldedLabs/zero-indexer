@@ -56,13 +56,16 @@ STAGE=$(mktemp -d)
 trap "rm -rf '$STAGE'" EXIT INT TERM
 
 # The crate. Its manifest names ../vendor/* in its [patch] sections, so the
-# context keeps the repo's own layout and the Containerfile reconstructs it
-# under /usr/src/app. No manifest is edited, here or in the image.
+# context keeps shim/ and vendor/ as siblings at its root and the Containerfile
+# reconstructs them under /usr/src/app. No manifest is edited, here or in the
+# image. The archive takes the paths under zeronym/ from the commit HEAD, so
+# every entry carries the committer time, and --strip-components=1 drops the
+# zeronym/ level on extraction.
 #
 # This also carries deploy/ itself, which is how the build gets a commit-pinned
 # copy of its own Containerfile.
 git -C "$ZERO_ROOT" archive HEAD -o "$STAGE/shim.tar" zeronym/shim
-tar -xpf "$STAGE/shim.tar" -C "$DEST"
+tar -xpf "$STAGE/shim.tar" --strip-components=1 -C "$DEST"
 
 # The crypto-common [patch] target. shim/Cargo.toml unconditionally patches
 # nym's nym-upgrade-mode-check to this vendored slim copy (see its Cargo.toml),
@@ -75,7 +78,7 @@ git -C "$ZERO_ROOT" archive HEAD -o "$STAGE/vendor.tar" \
 	zeronym/vendor/nym-upgrade-mode-check \
 	zeronym/vendor/webpki-roots-0.24.0 \
 	zeronym/vendor/webpki-roots-0.25.4
-tar -xpf "$STAGE/vendor.tar" -C "$DEST"
+tar -xpf "$STAGE/vendor.tar" --strip-components=1 -C "$DEST"
 
 # Also not needed: a rust-toolchain.toml. The shim's own lockfile is
 # authoritative, and the pinned pallet-rust digest is the toolchain.
@@ -86,11 +89,11 @@ tar -xpf "$STAGE/vendor.tar" -C "$DEST"
 # The Containerfile is the entire definition of the build, so it is the one file
 # in the context most worth tampering with, and therefore the one that must come
 # from HEAD rather than from the working tree. It arrives via the `git archive
-# HEAD zeronym/shim` above, at $DEST/zeronym/shim/deploy/Containerfile, and
+# HEAD zeronym/shim` above, at $DEST/shim/deploy/Containerfile, and
 # every caller builds with `-f` pointed at THAT path. There is deliberately no
 # copy at the context root: a second, working-tree-sourced copy is exactly the
 # hole this closes.
-RECIPE="$DEST/zeronym/shim/deploy/Containerfile"
+RECIPE="$DEST/shim/deploy/Containerfile"
 
 if [ -f "$RECIPE" ]; then
 	# Committed. Warn if the working tree has drifted, because the build will
@@ -114,7 +117,7 @@ else
 	echo "# Commit zeronym/shim/deploy/ before publishing any hash."
 	echo "############################################################"
 	echo
-	mkdir -p "$DEST/zeronym/shim/deploy"
+	mkdir -p "$DEST/shim/deploy"
 	cp "$HERE/Containerfile" "$RECIPE"
 	# Mirror the rest of deploy/ too, so the context has the same shape it will
 	# have once committed. None of it is compiled (cargo builds src/ and the
@@ -123,7 +126,7 @@ else
 	# with and without deploy/ present in the context produce the same binary.
 	for f in "$HERE"/*; do
 		[ -f "$f" ] || continue
-		cp "$f" "$DEST/zeronym/shim/deploy/"
+		cp "$f" "$DEST/shim/deploy/"
 	done
 fi
 

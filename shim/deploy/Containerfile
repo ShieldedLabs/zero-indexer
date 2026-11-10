@@ -44,16 +44,16 @@
 # attestation proves only that SOME enclave is running, which collapses the whole
 # design back into trusting whoever compiled it.
 #
-# Build context = a partial mirror of the zero repo (assemble via assemble.sh):
-#   zeronym/shim/                 the crate, including this file under deploy/
-#   zeronym/vendor/nym-upgrade-mode-check/  the crypto-common [patch] target
-#   zeronym/vendor/webpki-roots-0.2{4.0,5.4}/  the eMudhra-distrust [patch] targets
-# The layout is the repo's own, so the shim's `../vendor/*` path references
+# Build context = the shim crate and its [patch] targets (assemble via assemble.sh):
+#   shim/                         the crate, including this file under deploy/
+#   vendor/nym-upgrade-mode-check/  the crypto-common [patch] target
+#   vendor/webpki-roots-0.2{4.0,5.4}/  the eMudhra-distrust [patch] targets
+# shim/ and vendor/ are siblings, so the shim's `../vendor/*` path references
 # resolve unchanged. No manifest is edited, anywhere. zebra-chain and
 # zaino-proto come from crates.io, pinned by the committed Cargo.lock.
 #
 # BUILD THIS FILE FROM INSIDE THE CONTEXT, not from the working tree:
-#   docker build -f "$CTX/zeronym/shim/deploy/Containerfile" "$CTX" ...
+#   docker build -f "$CTX/shim/deploy/Containerfile" "$CTX" ...
 # assemble.sh puts a `git archive HEAD` copy there precisely so that the recipe,
 # which IS the definition of the build, is pinned to the same commit as the
 # sources it compiles. Building the working-tree copy instead would let an
@@ -123,10 +123,10 @@ ENV SOURCE_DATE_EPOCH=1
 # reimplementation. It links clean without them. If a future dependency breaks
 # the link, restore the reference's flags before debugging anything else.
 
-# Repo-shaped context.
-COPY zeronym/ ./zeronym/
+# The context root holds shim/ and vendor/.
+COPY . ./
 
-WORKDIR /usr/src/app/zeronym/shim
+WORKDIR /usr/src/app/shim
 
 # Two phases so the network is only open for the fetch. --locked here and
 # --frozen below make the committed Cargo.lock authoritative: any drift is a

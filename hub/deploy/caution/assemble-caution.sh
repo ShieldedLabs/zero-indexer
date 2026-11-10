@@ -482,7 +482,7 @@ if [ -d "$KEEP/.git" ]; then mv "$KEEP/.git" "$DEST/.git"; fi
 # to exist there. Copy it OUT OF THE ASSEMBLED CONTEXT, never from the working
 # tree: the context copy came from `git archive HEAD`, so the root copy inherits
 # that provenance.
-NESTED="$DEST/zeronym/hub/deploy/Containerfile"
+NESTED="$DEST/hub/deploy/Containerfile"
 test -f "$NESTED" || { echo "error: no Containerfile in the assembled context" >&2; exit 1; }
 cp "$NESTED" "$DEST/Containerfile"
 cmp "$NESTED" "$DEST/Containerfile" || {
