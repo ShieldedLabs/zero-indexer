@@ -30,14 +30,17 @@
 //! answering there is the exact leak this component exists to prevent.
 
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use http::{HeaderMap, HeaderValue, Request, Response};
 use http_body::{Body, Frame};
-use http_body_util::{BodyExt, LengthLimitError, Limited};
+use http_body_util::BodyExt;
 use prost::Message;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use zaino_proto::proto::service::{RawTransaction, SendResponse, TxFilter};
 
 use crate::classify::{classify_with_evidence, Class, Evidence};
@@ -93,6 +96,187 @@ const MAX_TX_FILTER_BYTES: usize = 1024;
 /// and far below the forever a slow-loris wants.
 const BODY_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// Bytes of request body the shim buffers at once, across every connection and
+/// every stream.
+///
+/// The caps above bound one request. HTTP/2 multiplies them: each connection
+/// carries many streams, and each `SendTransaction` stream could hold 4 MiB for
+/// 30 s. One connection pinned about 800 MiB, and three exceeded the 2048 MB
+/// enclave (external report, @ouicate).
+///
+/// Every buffered body draws on this one budget as its bytes arrive and returns
+/// them when its handler returns. A request over the budget is answered
+/// UNAVAILABLE, which a wallet retries, and is never forwarded. The budget
+/// counts bytes, so a stream holds budget only for bytes it has delivered: a
+/// slow, nearly empty stream takes nothing from an honest wallet, whose
+/// transaction is tens of kilobytes.
+///
+/// 256 MiB holds 32 maximum-size transactions at once (each charges its body
+/// and its decoded copy), or thousands of ordinary ones. To keep it spent, a
+/// client must deliver about 256 MiB every 30 s. Not configurable, for the same
+/// reason as `MAX_INFLIGHT_CONNECTIONS`.
+const BODY_BUDGET_BYTES: usize = 256 * 1024 * 1024;
+
+/// The least time between two "budget spent" warnings. A flood refuses many
+/// requests a second, and one line per refusal would bury the log.
+const BUDGET_WARN_INTERVAL_SECS: u64 = 10;
+
+/// The shared budget behind [`BODY_BUDGET_BYTES`]. One per listener.
+#[derive(Clone)]
+pub(crate) struct BodyBudget(Arc<Semaphore>);
+
+impl BodyBudget {
+    pub(crate) fn new() -> Self {
+        Self::with_bytes(BODY_BUDGET_BYTES)
+    }
+
+    fn with_bytes(bytes: usize) -> Self {
+        Self(Arc::new(Semaphore::new(bytes)))
+    }
+}
+
+/// The part of the budget one request holds. Returned when dropped.
+#[derive(Default)]
+struct Charge(Option<OwnedSemaphorePermit>);
+
+/// The shared budget had too little left.
+#[derive(Debug)]
+struct BudgetSpent;
+
+impl Charge {
+    /// Take `bytes` more from `budget`, or fail at once when it is spent.
+    fn add(&mut self, budget: &BodyBudget, bytes: usize) -> Result<(), BudgetSpent> {
+        if bytes == 0 {
+            return Ok(());
+        }
+        let bytes = u32::try_from(bytes).map_err(|_| BudgetSpent)?;
+        let permit = budget
+            .0
+            .clone()
+            .try_acquire_many_owned(bytes)
+            .map_err(|_| BudgetSpent)?;
+        match &mut self.0 {
+            Some(held) => held.merge(permit),
+            None => self.0 = Some(permit),
+        }
+        Ok(())
+    }
+}
+
+/// A request body in one owned buffer, and the budget it holds.
+struct Buffered {
+    bytes: Bytes,
+    trailers: Option<HeaderMap>,
+    charge: Charge,
+}
+
+/// Why a bounded body read stopped.
+#[derive(Debug)]
+enum ReadFailure {
+    /// Over the per-body cap.
+    TooLarge,
+    /// The shared budget is spent.
+    BudgetSpent,
+    /// The client's body stream failed.
+    Client(BoxError),
+}
+
+/// Read a request body into one owned buffer of at most `limit` bytes, and
+/// charge `budget` for the buffer before it grows and for any trailers.
+///
+/// Each chunk is COPIED into the buffer and dropped at once. h2 hands over a
+/// chunk as a slice of the connection's read buffer, so a held 1-byte chunk
+/// keeps that whole allocation alive, and a body of many tiny chunks pinned
+/// far more memory than its length. One owned buffer makes the charge the real
+/// footprint, and replaces the copy `Collected::to_bytes` made of a body that
+/// arrived in more than one chunk.
+async fn read_body(
+    mut body: InboundBody,
+    limit: usize,
+    budget: &BodyBudget,
+) -> Result<Buffered, ReadFailure> {
+    let mut buf = Vec::new();
+    let mut charged = 0;
+    let mut charge = Charge::default();
+    let mut trailers: Option<HeaderMap> = None;
+    while let Some(frame) = body.frame().await {
+        let frame = frame.map_err(|err| ReadFailure::Client(err.into()))?;
+        match frame.into_data() {
+            Ok(data) => {
+                let needed = buf.len() + data.len();
+                if needed > limit {
+                    return Err(ReadFailure::TooLarge);
+                }
+                if needed > charged {
+                    // Double, as a Vec would, but charge before allocating.
+                    let target = needed.max(charged * 2).min(limit);
+                    charge
+                        .add(budget, target - charged)
+                        .map_err(|_| ReadFailure::BudgetSpent)?;
+                    buf.reserve_exact(target - buf.len());
+                    charged = target;
+                }
+                buf.extend_from_slice(&data);
+            }
+            Err(frame) => {
+                if let Ok(more) = frame.into_trailers() {
+                    // Held as long as the body, through the divert or the
+                    // forward. hyper bounds each header block at 16 KiB, so
+                    // without a charge 32 streams on each of 256 connections
+                    // could hold 128 MiB of trailers outside the budget.
+                    charge
+                        .add(budget, header_list_size(&more))
+                        .map_err(|_| ReadFailure::BudgetSpent)?;
+                    match &mut trailers {
+                        Some(held) => held.extend(more),
+                        None => trailers = Some(more),
+                    }
+                }
+            }
+        }
+    }
+    Ok(Buffered {
+        bytes: Bytes::from(buf),
+        trailers,
+        charge,
+    })
+}
+
+/// A header block's size as HTTP/2 counts it (RFC 9113, section 6.5.2), the
+/// measure hyper's 16 KiB `max_header_list_size` bounds.
+fn header_list_size(headers: &HeaderMap) -> usize {
+    headers
+        .iter()
+        .map(|(name, value)| name.as_str().len() + value.len() + 32)
+        .sum()
+}
+
+/// The answer when the shared body budget is spent. UNAVAILABLE, because a
+/// wallet retries it, and the condition passes once the load does.
+fn budget_spent() -> Response<ProxyBody> {
+    static LAST_WARN: AtomicU64 = AtomicU64::new(0);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    let last = LAST_WARN.load(Ordering::Relaxed);
+    if now.saturating_sub(last) >= BUDGET_WARN_INTERVAL_SECS
+        && LAST_WARN
+            .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    {
+        tracing::warn!(
+            budget_bytes = BODY_BUDGET_BYTES,
+            interval_secs = BUDGET_WARN_INTERVAL_SECS,
+            "request refused: the shared request-body budget is spent. Logged at most once per \
+             interval"
+        );
+    }
+    grpc_error(
+        GRPC_UNAVAILABLE,
+        "zero-indexer-shim: too many request bodies in flight",
+    )
+}
+
 /// Handle a request routed to the `SendTransaction` method.
 ///
 /// The HTTP method is not checked here or by the caller, on purpose: see rule 3
@@ -102,14 +286,19 @@ pub(crate) async fn send_transaction(
     req: Request<InboundBody>,
     pool: Arc<UpstreamPool>,
     diversion: Option<Arc<Diversion>>,
+    budget: BodyBudget,
 ) -> Result<Response<ProxyBody>, BoxError> {
     let (parts, body) = req.into_parts();
 
-    // The only buffering in the entire shim, and it is bounded.
-    let read = Limited::new(body, MAX_SEND_TX_BYTES).collect();
-    let collected = match tokio::time::timeout(BODY_READ_TIMEOUT, read).await {
-        Ok(Ok(collected)) => collected,
-        Ok(Err(err)) => return Ok(body_read_failed(err)),
+    // The only buffering in the entire shim, bounded per body and in aggregate.
+    let read = read_body(body, MAX_SEND_TX_BYTES, &budget);
+    let Buffered {
+        bytes: frame,
+        trailers,
+        charge: _charge,
+    } = match tokio::time::timeout(BODY_READ_TIMEOUT, read).await {
+        Ok(Ok(buffered)) => buffered,
+        Ok(Err(failure)) => return Ok(body_read_failed(failure)),
         // Fail closed, exactly as an oversized body does: an unclassifiable
         // transaction is never forwarded to the operator, because forwarding it
         // is the one outcome the whole component exists to prevent.
@@ -125,10 +314,16 @@ pub(crate) async fn send_transaction(
         }
     };
 
-    let trailers = collected.trailers().cloned();
-    let frame = collected.to_bytes();
-
+    // The decoded transaction is a second copy of most of the body, and it
+    // lives as long as the body does, through the divert or the forward. Its
+    // bound, the body's length, is charged before decoding, so a refused
+    // request makes no copy. A body that yields no transaction returns it.
+    let mut copy = Charge::default();
+    if copy.add(&budget, frame.len()).is_err() {
+        return Ok(budget_spent());
+    }
     let (inspection, tx_data) = inspect(&parts.headers, &frame);
+    let _copy = tx_data.is_some().then_some(copy);
     log_verdict(&inspection, &frame);
 
     // A network upgrade looks exactly like garbage to a shim built before it, and
@@ -304,6 +499,7 @@ pub(crate) async fn get_transaction(
     req: Request<InboundBody>,
     pool: Arc<UpstreamPool>,
     diversion: Option<Arc<Diversion>>,
+    budget: BodyBudget,
 ) -> Result<Response<ProxyBody>, BoxError> {
     // No hub: nothing is diverted and there is nothing to hide, so relay
     // untouched, without buffering.
@@ -312,9 +508,15 @@ pub(crate) async fn get_transaction(
     };
 
     let (parts, body) = req.into_parts();
-    let read = Limited::new(body, MAX_TX_FILTER_BYTES).collect();
-    let collected = match tokio::time::timeout(BODY_READ_TIMEOUT, read).await {
-        Ok(Ok(collected)) => collected,
+    let read = read_body(body, MAX_TX_FILTER_BYTES, &budget);
+    // `_charge` holds this request's share of the budget until it returns.
+    let Buffered {
+        bytes: frame,
+        charge: _charge,
+        ..
+    } = match tokio::time::timeout(BODY_READ_TIMEOUT, read).await {
+        Ok(Ok(buffered)) => buffered,
+        Ok(Err(ReadFailure::BudgetSpent)) => return Ok(budget_spent()),
         Ok(Err(_)) => {
             return Ok(grpc_error(
                 GRPC_CANCELLED,
@@ -328,7 +530,6 @@ pub(crate) async fn get_transaction(
             ))
         }
     };
-    let frame = collected.to_bytes();
 
     let filter = match decode_tx_filter(&parts.headers, &frame) {
         Ok(filter) => filter,
@@ -512,26 +713,29 @@ fn grpc_unary(message: &[u8]) -> Response<ProxyBody> {
 
 /// The one case the proof of concept refuses to forward, split by cause.
 ///
-/// `Limited::collect()` fails for two quite different reasons and telling an
-/// operator the wrong one costs them an afternoon: either the body really did
-/// exceed [`MAX_SEND_TX_BYTES`], or the CLIENT's body stream errored (a reset
-/// mid-upload, a broken connection, a content-length mismatch). Both are
-/// fail-safes and neither is classifiable, so both get the fail-safe log line,
-/// but they get different reasons and different gRPC statuses.
-fn body_read_failed(err: BoxError) -> Response<ProxyBody> {
-    if err.is::<LengthLimitError>() {
-        tracing::warn!(
-            target: "zis::classify",
-            limit = MAX_SEND_TX_BYTES,
-            %err,
-            "MIGRATION-FAILSAFE: SendTransaction body exceeded the buffer limit, \
-             refusing to forward a body that could not be classified"
-        );
-        return grpc_error(
-            GRPC_RESOURCE_EXHAUSTED,
-            "zero-indexer-shim: SendTransaction body too large to classify",
-        );
-    }
+/// A body read fails for three different reasons, and telling an operator the
+/// wrong one costs them an afternoon: the body really did exceed
+/// [`MAX_SEND_TX_BYTES`], the shared budget was spent, or the CLIENT's body
+/// stream errored (a reset mid-upload, a broken connection, a content-length
+/// mismatch). The first and last are fail-safes with the fail-safe log line;
+/// each reason gets its own gRPC status.
+fn body_read_failed(failure: ReadFailure) -> Response<ProxyBody> {
+    let err = match failure {
+        ReadFailure::TooLarge => {
+            tracing::warn!(
+                target: "zis::classify",
+                limit = MAX_SEND_TX_BYTES,
+                "MIGRATION-FAILSAFE: SendTransaction body exceeded the buffer limit, \
+                 refusing to forward a body that could not be classified"
+            );
+            return grpc_error(
+                GRPC_RESOURCE_EXHAUSTED,
+                "zero-indexer-shim: SendTransaction body too large to classify",
+            );
+        }
+        ReadFailure::BudgetSpent => return budget_spent(),
+        ReadFailure::Client(err) => err,
+    };
 
     tracing::warn!(
         target: "zis::classify",
@@ -946,24 +1150,33 @@ mod tests {
         assert!(inspection.treat_as_migration());
     }
 
-    #[tokio::test]
-    async fn an_oversized_body_and_a_broken_body_are_reported_differently() {
-        use http_body_util::Full;
+    fn grpc_status(resp: &Response<ProxyBody>) -> &HeaderValue {
+        resp.headers().get("grpc-status").unwrap()
+    }
 
-        // The genuine over-limit case, produced by `Limited` itself rather
-        // than hand-built, because `LengthLimitError` cannot be constructed
-        // outside its own crate.
-        let too_long = Limited::new(Full::new(Bytes::from_static(b"too long")), 1)
-            .collect()
-            .await
-            .expect_err("the body is over the limit");
+    /// An inbound body that arrives as `chunks`, then `trailers` if any.
+    fn inbound(chunks: &[&'static [u8]], trailers: Option<HeaderMap>) -> InboundBody {
+        let frames: Vec<Result<Frame<Bytes>, std::convert::Infallible>> = chunks
+            .iter()
+            .map(|chunk| Ok(Frame::data(Bytes::from_static(chunk))))
+            .chain(trailers.map(|trailers| Ok(Frame::trailers(trailers))))
+            .collect();
+        InboundBody::new(http_body_util::StreamBody::new(futures_util::stream::iter(
+            frames,
+        )))
+    }
+
+    #[tokio::test]
+    async fn the_three_read_failures_are_reported_differently() {
         assert_eq!(
-            body_read_failed(too_long)
-                .headers()
-                .get("grpc-status")
-                .unwrap(),
+            grpc_status(&body_read_failed(ReadFailure::TooLarge)),
             "8",
-            "an over-limit body is RESOURCE_EXHAUSTED"
+            "an over-limit body is RESOURCE_EXHAUSTED: it can never succeed"
+        );
+        assert_eq!(
+            grpc_status(&body_read_failed(ReadFailure::BudgetSpent)),
+            "14",
+            "a spent budget is UNAVAILABLE: the wallet retries, and it passes with the load"
         );
 
         // A client that broke its own upload. Reporting this as "body too
@@ -974,13 +1187,94 @@ mod tests {
             "client went away",
         ));
         assert_eq!(
-            body_read_failed(broken)
-                .headers()
-                .get("grpc-status")
-                .unwrap(),
+            grpc_status(&body_read_failed(ReadFailure::Client(broken))),
             "1",
-            "a client body error is CANCELLED, not RESOURCE_EXHAUSTED"
+            "a client body error is CANCELLED"
         );
+    }
+
+    #[tokio::test]
+    async fn a_body_is_joined_into_one_buffer_with_its_trailers() {
+        let budget = BodyBudget::with_bytes(1024);
+        let mut trailers = HeaderMap::new();
+        trailers.insert("x-test", "1".parse().unwrap());
+
+        let read = read_body(inbound(&[b"ab", b"cd", b"e"], Some(trailers)), 64, &budget)
+            .await
+            .unwrap();
+        assert_eq!(read.bytes.as_ref(), b"abcde");
+        assert_eq!(read.trailers.as_ref().unwrap().get("x-test").unwrap(), "1");
+        // The buffer grew 2, 4, 8; the trailer is "x-test" + "1" + 32.
+        assert_eq!(budget.0.available_permits(), 1024 - 8 - 39);
+    }
+
+    #[tokio::test]
+    async fn trailers_past_the_budget_refuse_the_body_and_return_its_charge() {
+        let budget = BodyBudget::with_bytes(40);
+        let mut trailers = HeaderMap::new();
+        trailers.insert("x-test", "1".parse().unwrap());
+
+        let read = read_body(inbound(&[b"ab"], Some(trailers)), 64, &budget).await;
+        assert!(matches!(read, Err(ReadFailure::BudgetSpent)));
+        assert_eq!(budget.0.available_permits(), 40);
+    }
+
+    #[tokio::test]
+    async fn a_body_over_the_cap_is_too_large() {
+        let budget = BodyBudget::with_bytes(1024);
+        let read = read_body(inbound(&[b"abc", b"def"], None), 5, &budget).await;
+        assert!(matches!(read, Err(ReadFailure::TooLarge)));
+        assert_eq!(
+            budget.0.available_permits(),
+            1024,
+            "a refused read returns its charge"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_budget_is_shared_held_while_the_body_lives_and_returned_on_drop() {
+        let budget = BodyBudget::with_bytes(10);
+
+        let first = read_body(inbound(&[b"123456"], None), 64, &budget)
+            .await
+            .unwrap();
+        assert_eq!(
+            budget.0.available_permits(),
+            4,
+            "the first body holds its bytes"
+        );
+
+        let second = read_body(inbound(&[b"123456"], None), 64, &budget).await;
+        assert!(
+            matches!(second, Err(ReadFailure::BudgetSpent)),
+            "a second body is refused while the first holds the budget"
+        );
+
+        drop(first);
+        assert_eq!(
+            budget.0.available_permits(),
+            10,
+            "dropping the body returns its bytes"
+        );
+        read_body(inbound(&[b"123456"], None), 64, &budget)
+            .await
+            .expect("the returned budget serves the next body");
+    }
+
+    #[tokio::test]
+    async fn the_charge_grows_by_doubling_and_never_past_the_cap() {
+        let budget = BodyBudget::with_bytes(1024);
+        let read = read_body(
+            inbound(&[b"abcd", b"e", b"f", b"g", b"h", b"i"], None),
+            9,
+            &budget,
+        )
+        .await
+        .unwrap();
+        assert_eq!(read.bytes.as_ref(), b"abcdefghi");
+        // 4, doubled to 8, then capped at 9: three reservations for six
+        // chunks, and never more than the cap.
+        assert_eq!(budget.0.available_permits(), 1024 - 9);
     }
 
     #[test]
