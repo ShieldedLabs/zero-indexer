@@ -977,22 +977,26 @@ fn hex_prefix(bytes: &[u8], n: usize) -> String {
 /// if it sent any. Byte-exact, which is what makes the interception invisible
 /// to the backing indexer.
 ///
-/// The frame's bytes own the body's budget charge. h2 holds them until the
-/// upstream takes them or the stream ends, so the charge is returned when h2
-/// drops them.
+/// The frame's bytes own the body's budget charge, and the body keeps a
+/// reference to them until it is dropped, after its trailers are handed off.
+/// h2 holds the bytes until the upstream takes them or the stream ends, so the
+/// charge is returned when both are done with them.
 pub struct ReplayBody {
     data: Option<Bytes>,
     trailers: Option<HeaderMap>,
+    _charged: Bytes,
 }
 
 impl ReplayBody {
     fn new(data: Bytes, trailers: Option<HeaderMap>, charge: Charge) -> Self {
+        let charged = Bytes::from_owner(Charged {
+            bytes: data,
+            _charge: charge,
+        });
         ReplayBody {
-            data: Some(Bytes::from_owner(Charged {
-                bytes: data,
-                _charge: charge,
-            })),
+            data: Some(charged.clone()),
             trailers,
+            _charged: charged,
         }
     }
 }
@@ -1365,5 +1369,32 @@ mod tests {
         assert_eq!(budget.0.available_permits(), 924);
         drop(tail);
         assert_eq!(budget.0.available_permits(), 1024);
+    }
+
+    #[tokio::test]
+    async fn the_body_holds_its_charge_until_its_trailers_are_handed_off() {
+        let budget = BodyBudget::with_bytes(1024);
+        let mut trailers = HeaderMap::new();
+        trailers.insert("x-test", "1".parse().unwrap());
+
+        for data in [Bytes::new(), Bytes::from_static(b"abc")] {
+            let mut charge = Charge::default();
+            charge.add(&budget, 100).unwrap();
+            let empty = data.is_empty();
+            let mut body = ReplayBody::new(data, Some(trailers.clone()), charge);
+
+            if !empty {
+                drop(body.frame().await.unwrap().unwrap().into_data().unwrap());
+            }
+            let handed_off = body.frame().await.unwrap().unwrap();
+            assert!(handed_off.is_trailers());
+            assert_eq!(
+                budget.0.available_permits(),
+                924,
+                "the trailers left with their charge held (empty body: {empty})"
+            );
+            drop(body);
+            assert_eq!(budget.0.available_permits(), 1024);
+        }
     }
 }
