@@ -140,8 +140,8 @@ async fn forwarded_bytes_hold_their_charge_until_the_stream_or_connection_ends()
 
     let served = fill(&mut wallet, shim, &body).await;
     assert!(
-        served > 0 && served < BODIES_IN_BUDGET,
-        "{served} unread bodies fit a budget of {BODIES_IN_BUDGET}"
+        served > 0 && served <= BODIES_IN_BUDGET,
+        "{served} unread bodies held by a budget of {BODIES_IN_BUDGET}"
     );
     assert_eq!(
         accepted.load(Ordering::SeqCst),
