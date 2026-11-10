@@ -145,6 +145,10 @@ base64 = "0.22"
 # depends on tonic and tonic-prost, and tonic depends on tokio-stream.
 tonic = "0.14"
 tokio-stream = "0.1"
+# A raw HTTP/2 server for tests/replay_charge.rs: an upstream that answers and
+# then never reads, which hyper's server cannot be made to do. Already in the
+# tree through hyper.
+h2 = "0.4"
 
 # Substitute the vendored slim copy of nym-upgrade-mode-check (see
 # vendor/nym-upgrade-mode-check/Cargo.toml). The real crate's jwt-simple subtree

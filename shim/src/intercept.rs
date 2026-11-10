@@ -105,11 +105,12 @@ const BODY_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30
 /// enclave (external report, @ouicate).
 ///
 /// Every buffered body draws on this one budget as its bytes arrive and returns
-/// them when its handler returns. A request over the budget is answered
-/// UNAVAILABLE, which a wallet retries, and is never forwarded. The budget
-/// counts bytes, so a stream holds budget only for bytes it has delivered: a
-/// slow, nearly empty stream takes nothing from an honest wallet, whose
-/// transaction is tens of kilobytes.
+/// them when its handler returns. A forwarded body returns them when the
+/// upstream has taken its bytes or ended the stream. A request over the budget
+/// is answered UNAVAILABLE, which a wallet retries, and is never forwarded. The
+/// budget counts bytes, so a stream holds budget only for bytes it has
+/// delivered: a slow, nearly empty stream takes nothing from an honest wallet,
+/// whose transaction is tens of kilobytes.
 ///
 /// 256 MiB holds 32 maximum-size transactions at once (each charges its body
 /// and its decoded copy), or thousands of ordinary ones. To keep it spent, a
@@ -295,7 +296,7 @@ pub(crate) async fn send_transaction(
     let Buffered {
         bytes: frame,
         trailers,
-        charge: _charge,
+        charge,
     } = match tokio::time::timeout(BODY_READ_TIMEOUT, read).await {
         Ok(Ok(buffered)) => buffered,
         Ok(Err(failure)) => return Ok(body_read_failed(failure)),
@@ -361,8 +362,10 @@ pub(crate) async fn send_transaction(
 
     // Pass-through, or a migration with no hub: replay the ORIGINAL bytes to the
     // backing indexer, which sees exactly what the wallet sent, trailers and all.
+    // The replayed bytes carry the charge, because h2 may hold them after this
+    // handler returns.
     let upstream = pool.get().await?;
-    let replay = ReplayBody::new(frame, trailers).boxed_unsync();
+    let replay = ReplayBody::new(frame, trailers, charge).boxed_unsync();
     let resp = forward(upstream, Request::from_parts(parts, replay)).await?;
     Ok(resp.map(|body| body.map_err(BoxError::from).boxed_unsync()))
 }
@@ -702,7 +705,8 @@ fn grpc_unary(message: &[u8]) -> Response<ProxyBody> {
     let mut trailers = HeaderMap::new();
     trailers.insert("grpc-status", HeaderValue::from_static("0"));
 
-    let body = ReplayBody::new(Bytes::from(framed), Some(trailers)).boxed_unsync();
+    let body =
+        ReplayBody::new(Bytes::from(framed), Some(trailers), Charge::default()).boxed_unsync();
     let mut resp = Response::new(body);
     resp.headers_mut().insert(
         http::header::CONTENT_TYPE,
@@ -972,17 +976,40 @@ fn hex_prefix(bytes: &[u8], n: usize) -> String {
 /// Replays a buffered request body: one DATA frame, then the client's trailers
 /// if it sent any. Byte-exact, which is what makes the interception invisible
 /// to the backing indexer.
+///
+/// The frame's bytes own the body's budget charge, and the body keeps a
+/// reference to them until it is dropped, after its trailers are handed off.
+/// h2 holds the bytes until the upstream takes them or the stream ends, so the
+/// charge is returned when both are done with them.
 pub struct ReplayBody {
     data: Option<Bytes>,
     trailers: Option<HeaderMap>,
+    _charged: Bytes,
 }
 
 impl ReplayBody {
-    fn new(data: Bytes, trailers: Option<HeaderMap>) -> Self {
+    fn new(data: Bytes, trailers: Option<HeaderMap>, charge: Charge) -> Self {
+        let charged = Bytes::from_owner(Charged {
+            bytes: data,
+            _charge: charge,
+        });
         ReplayBody {
-            data: Some(data),
+            data: Some(charged.clone()),
             trailers,
+            _charged: charged,
         }
+    }
+}
+
+/// A buffer and its budget charge, dropped together.
+struct Charged {
+    bytes: Bytes,
+    _charge: Charge,
+}
+
+impl AsRef<[u8]> for Charged {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
     }
 }
 
@@ -1301,7 +1328,11 @@ mod tests {
         let mut trailers = HeaderMap::new();
         trailers.insert("x-test", "1".parse().unwrap());
 
-        let body = ReplayBody::new(Bytes::from_static(b"abc"), Some(trailers));
+        let body = ReplayBody::new(
+            Bytes::from_static(b"abc"),
+            Some(trailers),
+            Charge::default(),
+        );
         let collected = body.collect().await.unwrap();
         assert_eq!(collected.trailers().unwrap().get("x-test").unwrap(), "1");
         assert_eq!(collected.to_bytes().as_ref(), b"abc");
@@ -1309,9 +1340,61 @@ mod tests {
 
     #[tokio::test]
     async fn replay_body_without_trailers_is_just_the_bytes() {
-        let body = ReplayBody::new(Bytes::from_static(b"abc"), None);
+        let body = ReplayBody::new(Bytes::from_static(b"abc"), None, Charge::default());
         let collected = body.collect().await.unwrap();
         assert!(collected.trailers().is_none());
         assert_eq!(collected.to_bytes().as_ref(), b"abc");
+    }
+
+    #[tokio::test]
+    async fn replayed_bytes_hold_their_charge_after_the_body_is_dropped() {
+        let budget = BodyBudget::with_bytes(1024);
+        let mut charge = Charge::default();
+        charge.add(&budget, 100).unwrap();
+        let mut body = ReplayBody::new(Bytes::from_static(b"abc"), None, charge);
+
+        let data = body.frame().await.unwrap().unwrap().into_data().unwrap();
+        assert!(body.frame().await.is_none());
+        drop(body);
+        assert_eq!(data.as_ref(), b"abc");
+        assert_eq!(
+            budget.0.available_permits(),
+            924,
+            "bytes h2 still holds keep their charge"
+        );
+
+        // A slice of the bytes holds the charge too.
+        let tail = data.slice(2..);
+        drop(data);
+        assert_eq!(budget.0.available_permits(), 924);
+        drop(tail);
+        assert_eq!(budget.0.available_permits(), 1024);
+    }
+
+    #[tokio::test]
+    async fn the_body_holds_its_charge_until_its_trailers_are_handed_off() {
+        let budget = BodyBudget::with_bytes(1024);
+        let mut trailers = HeaderMap::new();
+        trailers.insert("x-test", "1".parse().unwrap());
+
+        for data in [Bytes::new(), Bytes::from_static(b"abc")] {
+            let mut charge = Charge::default();
+            charge.add(&budget, 100).unwrap();
+            let empty = data.is_empty();
+            let mut body = ReplayBody::new(data, Some(trailers.clone()), charge);
+
+            if !empty {
+                drop(body.frame().await.unwrap().unwrap().into_data().unwrap());
+            }
+            let handed_off = body.frame().await.unwrap().unwrap();
+            assert!(handed_off.is_trailers());
+            assert_eq!(
+                budget.0.available_permits(),
+                924,
+                "the trailers left with their charge held (empty body: {empty})"
+            );
+            drop(body);
+            assert_eq!(budget.0.available_permits(), 1024);
+        }
     }
 }
