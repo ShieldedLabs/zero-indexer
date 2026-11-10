@@ -362,7 +362,7 @@ pub(crate) async fn send_transaction(
 
     // Pass-through, or a migration with no hub: replay the ORIGINAL bytes to the
     // backing indexer, which sees exactly what the wallet sent, trailers and all.
-    // The body carries the charge, because h2 may hold its bytes after this
+    // The replayed bytes carry the charge, because h2 may hold them after this
     // handler returns.
     let upstream = pool.get().await?;
     let replay = ReplayBody::new(frame, trailers, charge).boxed_unsync();
@@ -973,34 +973,39 @@ fn hex_prefix(bytes: &[u8], n: usize) -> String {
     out
 }
 
-/// The most bytes [`ReplayBody`] yields at once: one HTTP/2 DATA frame at the
-/// default frame size.
-const REPLAY_PIECE_BYTES: usize = 16 * 1024;
-
-/// Replays a buffered request body: its bytes, then the client's trailers if it
-/// sent any. Byte-exact, which is what makes the interception invisible to the
-/// backing indexer.
+/// Replays a buffered request body: one DATA frame, then the client's trailers
+/// if it sent any. Byte-exact, which is what makes the interception invisible
+/// to the backing indexer.
 ///
-/// The body holds the buffer's budget charge until it is dropped. hyper takes
-/// the next piece only when the upstream stream has send capacity, so the
-/// charge stays held while an upstream keeps its window shut, and h2 holds
-/// about one piece outside the budget. Each piece is a copy, so the buffer is
-/// freed with the body.
+/// The frame's bytes own the body's budget charge. h2 holds them until the
+/// upstream takes them or the stream ends, so the charge is returned when h2
+/// drops them.
 pub struct ReplayBody {
-    data: Bytes,
-    sent: usize,
+    data: Option<Bytes>,
     trailers: Option<HeaderMap>,
-    _charge: Charge,
 }
 
 impl ReplayBody {
     fn new(data: Bytes, trailers: Option<HeaderMap>, charge: Charge) -> Self {
         ReplayBody {
-            data,
-            sent: 0,
+            data: Some(Bytes::from_owner(Charged {
+                bytes: data,
+                _charge: charge,
+            })),
             trailers,
-            _charge: charge,
         }
+    }
+}
+
+/// A buffer and its budget charge, dropped together.
+struct Charged {
+    bytes: Bytes,
+    _charge: Charge,
+}
+
+impl AsRef<[u8]> for Charged {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
     }
 }
 
@@ -1013,11 +1018,10 @@ impl Body for ReplayBody {
         _cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Bytes>, BoxError>>> {
         let this = self.get_mut();
-        if this.sent < this.data.len() {
-            let end = this.data.len().min(this.sent + REPLAY_PIECE_BYTES);
-            let piece = Bytes::copy_from_slice(&this.data[this.sent..end]);
-            this.sent = end;
-            return Poll::Ready(Some(Ok(Frame::data(piece))));
+        if let Some(data) = this.data.take() {
+            if !data.is_empty() {
+                return Poll::Ready(Some(Ok(Frame::data(data))));
+            }
         }
         if let Some(trailers) = this.trailers.take() {
             return Poll::Ready(Some(Ok(Frame::trailers(trailers))));
@@ -1339,27 +1343,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replay_body_yields_copied_pieces_and_holds_its_charge_until_dropped() {
+    async fn replayed_bytes_hold_their_charge_after_the_body_is_dropped() {
         let budget = BodyBudget::with_bytes(1024);
         let mut charge = Charge::default();
         charge.add(&budget, 100).unwrap();
-        let data: Vec<u8> = (0..2 * REPLAY_PIECE_BYTES + 1).map(|i| i as u8).collect();
-        let mut body = ReplayBody::new(Bytes::from(data.clone()), None, charge);
+        let mut body = ReplayBody::new(Bytes::from_static(b"abc"), None, charge);
 
-        let mut replayed = Vec::new();
-        while let Some(frame) = body.frame().await {
-            let piece = frame.unwrap().into_data().unwrap();
-            assert!(piece.len() <= REPLAY_PIECE_BYTES);
-            replayed.extend_from_slice(&piece);
-        }
-        assert_eq!(replayed, data);
+        let data = body.frame().await.unwrap().unwrap().into_data().unwrap();
+        assert!(body.frame().await.is_none());
+        drop(body);
+        assert_eq!(data.as_ref(), b"abc");
         assert_eq!(
             budget.0.available_permits(),
             924,
-            "the body holds its charge after its last piece"
+            "bytes h2 still holds keep their charge"
         );
 
-        drop(body);
+        // A slice of the bytes holds the charge too.
+        let tail = data.slice(2..);
+        drop(data);
+        assert_eq!(budget.0.available_permits(), 924);
+        drop(tail);
         assert_eq!(budget.0.available_permits(), 1024);
     }
 }
