@@ -79,8 +79,7 @@ module shim {
   // Views
   // ------------------------------------------------------------------------
 
-  /// Whether a transaction is diverted (`classify`, `shim/src/classify.rs`
-  /// at #94). Two arms divert:
+  /// Whether a transaction is diverted (`classify`, `shim/src/classify.rs`). Two arms divert:
   ///
   /// - It touches Orchard.
   /// - It spends a transparent output and has transparent parts only. The
