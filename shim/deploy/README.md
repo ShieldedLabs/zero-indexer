@@ -48,7 +48,7 @@ builds. It is a hash anyone can independently recompute.
 | `assemble.sh` | Builds the throwaway build context out of `git archive HEAD`. Never touches the working tree. |
 | `Containerfile` | The build itself. StageX bases pinned by digest, static musl, export stage, busybox runtime. |
 | `build.sh` | One deterministic build: extracts the binary and packages the OCI image, printing both hashes. |
-| `reproduce.sh` | The proof: two cold builds, compared against each other **and** against `EXPECTED_SHA256`, then assert the vendored subtrees are still clean. |
+| `reproduce.sh` | The proof: two cold builds, compared against each other **and** against `EXPECTED_SHA256`. |
 | `EXPECTED_SHA256` | The published binary hash, in one machine-readable place. `reproduce.sh` and CI both read it; re-baselining is an explicit, reviewable edit. |
 
 `.github/workflows/zeronym-shim-reproduce.yml` runs `reproduce.sh` itself (not a
@@ -142,7 +142,7 @@ In the recipe, ours to set:
   commit timestamp, so mtimes are identical on every machine. **That includes
   the Containerfile itself**, which is the whole definition of the build and
   therefore the file most worth pinning to a commit; every caller builds
-  `-f "$CTX/zeronym/shim/deploy/Containerfile"`, the archived copy, never the
+  `-f "$CTX/shim/deploy/Containerfile"`, the archived copy, never the
   working-tree one. Without that, an auditor at the recorded commit with a
   locally edited recipe would build something else while believing they had
   rebuilt that commit, and nothing would say otherwise.
@@ -174,40 +174,21 @@ network and destroys determinism.
 
 ## The build context
 
-`assemble.sh` produces a partial mirror of the zero repo:
+`assemble.sh` archives the crate and its `[patch]` targets out of `git archive
+HEAD` and strips the `zeronym/` level, so the context root holds:
 
 ```
-zeronym/shim/                 the crate
-zebra/Cargo.toml              workspace root that zebra-chain inherits from
-zebra/zebra-chain/            the vendored Zcash parser (the path dep)
-zebra/zebra-test/             optional dep of zebra-chain, manifest only
-zaino/Cargo.toml              workspace root that zaino-proto inherits from
-zaino/packages/zaino-proto/   the CompactTxStreamer codegen (the path dep)
+shim/                                  the crate, including deploy/
+vendor/nym-upgrade-mode-check/         the crypto-common [patch] target
+vendor/webpki-roots-0.2{4.0,5.4}/      the eMudhra-distrust [patch] targets
 ```
 
-Total 8.5 MB. Keeping the repo's own layout is what makes the shim's
-`../../zebra/zebra-chain` and `../../zaino/packages/zaino-proto` path
-dependencies resolve unchanged inside the image. **No manifest is edited
-anywhere**, which is both a hard rule (vendored subtrees are read-only) and the
-right answer.
-
-Three non-obvious facts, each established empirically rather than assumed:
-
-- **`zebra-test` must be present and is never compiled.** It is an optional
-  dependency of zebra-chain that only surfaces under dev-dependencies, but cargo
-  must load its manifest to resolve the graph. Removing it fails at
-  *resolution*, not compile: `failed to get zebra-test as a dependency of
-  package zebra-chain`. The error looks unrelated to what you deleted.
-- **The other workspace members are not needed.** zebra lists twelve members and
-  zaino nine; cargo reads those roots only for inheritance here and does not
-  require the absent ones to exist.
-- **`orchard/` is not needed.** zebra carries a `[zero]` patch
-  `orchard = { path = "../orchard" }`, but that patch belongs to zebra's
-  workspace, not the shim's. The shim is its own workspace and resolves orchard
-  from crates.io per its lockfile. (Whether the shim's parser and the node's
-  parser *should* come from the same orchard is a real open question, and a
-  separate one. It does not affect reproducibility; the lockfile pins it either
-  way.)
+`shim/` and `vendor/` are siblings, as in the repo, so the shim's `../vendor/*`
+path references resolve unchanged inside the image. **No manifest is edited
+anywhere.** `zebra-chain` (`=12.0.0`) and `zaino-proto` (`=0.6.0`) come from
+crates.io during `cargo fetch --locked`, pinned by the checksums in the committed
+`Cargo.lock`. The context layout is the one the shim keeps after it moves to its
+own repository, so the move leaves the in-image paths and the hash unchanged.
 
 ## Two traps worth naming
 
@@ -222,14 +203,10 @@ add the protobuf pallet back while copy-pasting from the sibling recipe. Inside
 a container this would only alter a throwaway copy, but it silently changes what
 gets compiled, and therefore the hash.
 
-The `default-features = false` lock has been tested where it actually gets
-stressed, which is the *host*, not the image: this development machine has
-`protoc` on `PATH` at `/opt/homebrew/bin/protoc`, and a full `cargo test
---locked` of the shim still leaves `git status --porcelain zebra/ zaino/`
-empty. If the `which` branch were live, that build would have rewritten
-`zaino/packages/zaino-proto/src/proto/*.rs` in the vendored subtree. So the
-feature lock holds on its own, and the absent-protoc image is the second,
-independent one.
+The `default-features = false` lock is the one that holds on a host with
+`protoc` on `PATH`, and the absent-protoc image is the second, independent one.
+Host test runs use `env -u PROTOC`, as `zeronym-guards.yml` does: `zaino-proto`
+0.6.0's `build.rs` treats a set-but-empty `PROTOC` as a protoc path.
 
 **No cache mounts, ever, in this file.** See above. The sibling
 `overlay/Containerfile` uses them and is correspondingly unsuitable for proving
@@ -263,14 +240,12 @@ flag list.
 # one deterministic build: binary + OCI image, prints both hashes
 sh zeronym/shim/deploy/build.sh
 
-# the proof: two cold builds, compared to each other AND to EXPECTED_SHA256,
-# then assert the vendored trees are clean
+# the proof: two cold builds, compared to each other AND to EXPECTED_SHA256
 sh zeronym/shim/deploy/reproduce.sh
 ```
 
 Run these from anywhere inside the checkout. Artifacts land outside it
-(`../zero-indexer-shim-build/`) so that `git status --porcelain zebra/ zaino/`
-stays a clean signal. Override with `OUT` and `CTX`.
+(`../zero-indexer-shim-build/`) so that `git status` stays a clean signal. Override with `OUT` and `CTX`.
 
 Changing the recipe on purpose means re-baselining: confirm the new hash twice
 with `EXPECTED= sh zeronym/shim/deploy/reproduce.sh` (an empty `EXPECTED` skips
@@ -280,8 +255,7 @@ must never drift apart.
 
 **Changing the compiled source means re-baselining too**, and that is the more
 common case: any edit under `zeronym/shim/src/`, to `Cargo.toml` or
-`Cargo.lock`, or a subtree pull touching `zebra/zebra-chain` or
-`zaino/packages/zaino-proto`, moves the binary and therefore the published hash.
+`Cargo.lock` (including the `zebra-chain` and `zaino-proto` pins) moves the binary and therefore the published hash.
 Both 2026-08-01 re-baselines were of exactly that kind (two classifier rulings in
 one day), and both are written up below. Two traps the first one exposed, both
 worth knowing before you start.
@@ -310,7 +284,8 @@ below names which deployment each superseded binary belongs to, where one does.
 
 | | binary sha256 | what it was built from |
 |---|---|---|
-| **current**, buffered request bodies share one byte budget | `8d7f437d6f96f089f581a0242d30345a16d122f636d5c53911ea98e5471a7167` | two source files (`96dfa790`, `ef5bebb5`, `d9fd89dd`, `4fb44614`, `11cd816f`, `39d2a0fa`, merged with main at `20d4cb64`): `intercept.rs` reads `SendTransaction` bodies, and `GetTransaction` filters when a hub is configured, through `read_body`, which copies each chunk into one owned buffer and charges a 256 MiB budget shared across the listener (`BODY_BUDGET_BYTES`) before the buffer grows, again for the decoded transaction before decoding, and for request trailers; a request over the budget is answered UNAVAILABLE. A forwarded body's bytes own its charge (`Bytes::from_owner` in `ReplayBody`), and the body keeps a reference until its trailers are handed off, so the charge is returned only when h2 and the body have both dropped them. `proxy.rs` creates the budget per listener. No recipe change, and no change to the binary's dependencies: `h2`, already compiled in through hyper, becomes a dev-dependency for a test, so `Cargo.toml` and `Cargo.lock` move. Measured by `zeronym-shim-reproduce` across four cold builds, two runs of two (push and pull_request), all agreeing. |
+| **current**, zebra-chain and zaino-proto from crates.io | `df8af3903debd383d59e4ca2d66b78792009d7ebc66f96bc6ed61996e09a94cb` | two commits, no change under `src/`. (1) `af51d850`: `zebra-chain` and `zaino-proto` move from the `zebra/` and `zaino/` path dependencies to crates.io, pinned `=12.0.0` and `=0.6.0`, and the context drops both subtrees. crates.io `zebra-chain` 12.0.0 carries the subtree's `src/`, and `zaino-proto` 0.6.0 differs only in a `build.rs` that is inert with `PROTOC` unset. `Cargo.lock` moves both crates (and the dev-only `zebra-test`) from path to registry. (2) `6a71bdcd`: the context root holds `shim/` and `vendor/`, so the in-image crate path is `/usr/src/app/shim`. The hash moved because the embedded source paths and the symbol hashes moved. On throwaway builds with a shared `--remap-path-prefix` and v0 symbol mangling, each pair has the same set of distinct normalized function bodies, and on the published binaries the absolute-path strings change only by those prefixes. Measured locally across two cold builds per commit on an arm64 Mac under Rosetta, agreeing. |
+| superseded, buffered request bodies share one byte budget | `8d7f437d6f96f089f581a0242d30345a16d122f636d5c53911ea98e5471a7167` | two source files (`96dfa790`, `ef5bebb5`, `d9fd89dd`, `4fb44614`, `11cd816f`, `39d2a0fa`, merged with main at `20d4cb64`): `intercept.rs` reads `SendTransaction` bodies, and `GetTransaction` filters when a hub is configured, through `read_body`, which copies each chunk into one owned buffer and charges a 256 MiB budget shared across the listener (`BODY_BUDGET_BYTES`) before the buffer grows, again for the decoded transaction before decoding, and for request trailers; a request over the budget is answered UNAVAILABLE. A forwarded body's bytes own its charge (`Bytes::from_owner` in `ReplayBody`), and the body keeps a reference until its trailers are handed off, so the charge is returned only when h2 and the body have both dropped them. `proxy.rs` creates the budget per listener. No recipe change, and no change to the binary's dependencies: `h2`, already compiled in through hyper, becomes a dev-dependency for a test, so `Cargo.toml` and `Cargo.lock` move. Measured by `zeronym-shim-reproduce` across four cold builds, two runs of two (push and pull_request), all agreeing. |
 | superseded, a wallet connection holds at most 2 MiB of indexer data | `168132372dca87794c288e9bc570fbeb289bd09518251647985c17c94c6b10dd` | one source file (`38973a90`, `aa92678d`): `proxy.rs` gives the indexer-facing HTTP/2 client its own windows, 256 KiB per stream and 1 MiB per connection (`UPSTREAM_STREAM_WINDOW`, `UPSTREAM_CONNECTION_WINDOW`), and sets `max_send_buf_size(16 KiB)` and `max_concurrent_streams(32)` on the wallet-facing HTTP/2 server; the wallet-facing windows stay 2 MiB and 8 MiB. No dependency or recipe change. Measured by `zeronym-shim-reproduce` across four cold builds, two runs of two (push and pull_request), all agreeing. |
 | superseded, a hub `404` means absence only with the not-found body | `8ff163d78e9d25f1b049d1ecc06768901d33989edfece99dee8b0446aef23c7f` | one source file (`4b6bb419`): `hub.rs` maps a lookup `404` to `NotFound` only when its body is exactly `transaction not found`, the bytes every hub with a lookup route sends; any other `404` is an error and fails closed. No dependency or recipe change. Measured by `zeronym-shim-reproduce` across four cold builds, two runs of two (push and pull_request), all agreeing. |
 | superseded, transparent-only spends diverted | `80ed3b24825a4957789b4f98911edf65c7328745336e8f45eac8d0afb0a16bff` | two source files (`c1d733fb`): `classify.rs` gains `is_transparent_only_spend`, a second arm of the divert predicate (a transaction that spends a prevout and has no Sprout, Sapling, Orchard or Ironwood data, the shape of the second leg of a ZIP 320 TEX payment), and a `transparent_only` evidence field; `intercept.rs` logs that field at DEBUG only. No dependency or recipe change. Measured by `zeronym-shim-reproduce` across four cold builds, two runs of two (push and pull_request), all agreeing. |
@@ -1164,8 +1139,7 @@ sh zeronym/shim/deploy/reproduce.sh
 ```
 
 `reproduce.sh` exits non-zero on any of: the two builds disagreeing with each
-other, either build disagreeing with `EXPECTED_SHA256`, or a dirtied vendored
-subtree. A clean exit is the whole claim.
+other, or either build disagreeing with `EXPECTED_SHA256`. A clean exit is the whole claim.
 
 To compare against the published hash by hand, without the wrapper:
 
@@ -1177,7 +1151,7 @@ sh zeronym/shim/deploy/assemble.sh "$CTX"
 # `git archive HEAD`. Not your working-tree copy. That is what makes "I rebuilt
 # commit X" mean something.
 SOURCE_DATE_EPOCH=1 docker build \
-  -f "$CTX/zeronym/shim/deploy/Containerfile" "$CTX" \
+  -f "$CTX/shim/deploy/Containerfile" "$CTX" \
   --platform linux/amd64 --target export --no-cache \
   --output type=local,dest=out
 
@@ -1190,7 +1164,7 @@ text and two differently-named copies compare cleanly.
 
 If your hash differs, check these in order:
 
-1. **In-image paths.** They are pinned (`WORKDIR /usr/src/app/zeronym/shim`,
+1. **In-image paths.** They are pinned (`WORKDIR /usr/src/app/shim`,
    `CARGO_HOME=/usr/local/cargo`) and rustc embeds them. Editing either changes
    the hash. Your *host* paths do not matter and have been tested not to.
 2. **Cache mounts.** If someone has added a `--mount=type=cache` to the

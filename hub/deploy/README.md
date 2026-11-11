@@ -29,20 +29,19 @@ other.
 | `assemble.sh` | Builds the throwaway build context out of `git archive HEAD`. Never touches the working tree. |
 | `Containerfile` | The build itself. StageX bases pinned by digest, static musl, export stage, busybox runtime. |
 | `build.sh` | One deterministic build: extracts the binary and packages the OCI image, printing both hashes. |
-| `reproduce.sh` | The proof: two cold builds, compared against each other **and** against `EXPECTED_SHA256`, then assert `zebra/` and `zaino/` are still clean. |
+| `reproduce.sh` | The proof: two cold builds, compared against each other **and** against `EXPECTED_SHA256`. |
 | `EXPECTED_SHA256` | The published binary hash **of the source in this repository** -- not of any deployed enclave. Re-baseline it (and this list) whenever a determinism ingredient changes, which includes any change to `src/`. |
 | `caution/` | The attested Nitro-enclave deploy (see `caution/README.md`). |
 
 ## What differs from the shim recipe
 
 - **Binary name and entrypoint** (`zero-indexer-hub`, `/zero-indexer-hub`).
-- The context is the same shape as the shim's: `zeronym/hub` plus the `zebra/`
-  pieces `zebra-chain` needs and the `zaino/` pieces `zaino-proto` needs. The hub
-  broadcasts through an indexer's `CompactTxStreamer`, so it carries
-  `zaino-proto` exactly as the shim does, with the same
-  `default-features = false` requirement and the same no-protoc-in-the-image
-  lock. (An earlier revision broadcast over a node's JSON-RPC and needed no
-  `zaino/`; that is why some sibling notes still say so.)
+- The context is the same shape as the shim's: `hub/` and `vendor/` at the
+  context root, with `zebra-chain` (`=12.0.0`) and `zaino-proto` (`=0.6.0`)
+  from crates.io, pinned by the committed `Cargo.lock`. The hub broadcasts
+  through an indexer's `CompactTxStreamer`, so it carries `zaino-proto` exactly
+  as the shim does, with the same `default-features = false` requirement and the
+  same no-protoc-in-the-image lock.
 - Everything else (StageX bases, `SOURCE_DATE_EPOCH=1`, `codegen-units=1`,
   `crt-static`, `--build-id=none`, committed lockfile, no BuildKit cache mounts,
   no TLS stack, no rocksdb, no `libzcash_script`) is identical to the shim.
@@ -52,9 +51,8 @@ other.
 1. The `docker/dockerfile` frontend digest pinned on line 1 of `Containerfile`.
 2. The StageX base digests (`pallet-rust`, `core-busybox`).
 3. `RUSTFLAGS`, `SOURCE_DATE_EPOCH`, `CARGO_HOME`, `WORKDIR`.
-4. The committed `Cargo.lock`, and the `zebra-chain` and `zaino-proto` sources
-   archived into the context (a subtree pull in either can move the hash; the
-   reproduce workflow fires on those paths for that reason). The vendored
+4. The committed `Cargo.lock`, which pins `zebra-chain` and `zaino-proto` from
+   crates.io by checksum. The vendored
    `nym-upgrade-mode-check` (the crypto-common `[patch]` target) and the two
    `webpki-roots` copies (the eMudhra-distrust `[patch.crates-io]` targets) are
    archived too.
