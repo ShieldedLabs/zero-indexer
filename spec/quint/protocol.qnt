@@ -57,7 +57,7 @@ module protocol {
   // protocol does not read them.
 
   pure def orchard(id: str, created: Height, expiry: Height): Payload =
-    { id: id, txid: Some(id), created: created, expiry: Some(expiry), class: OrchardTouching, spends: Set(), oversize: false }
+    { id: id, txid: Some(id), created: created, expiry: Some(expiry), class: OrchardTouching, spends: Set(), oversize: false, actions: 2 }
 
   /// Two migrations from supported wallets, built at heights 2 and 4. Each
   /// pays a single-use transparent output: `early` is the first leg of a TEX
@@ -68,20 +68,20 @@ module protocol {
   pure val tight = orchard("tight", 2, 5)
   /// Bytes the shim cannot parse and neither can a hub: no txid, no expiry.
   pure val junk: Payload =
-    { id: "junk", txid: None, created: 1, expiry: None, class: Unparseable, spends: Set(), oversize: false }
+    { id: "junk", txid: None, created: 1, expiry: None, class: Unparseable, spends: Set(), oversize: false, actions: 0 }
   /// A Sapling payment with no transparent inputs. The shim forwards it.
   pure val plain: Payload =
-    { id: "plain", txid: Some("plain"), created: 1, expiry: Some(9), class: OtherShielded, spends: Set(), oversize: false }
+    { id: "plain", txid: Some("plain"), created: 1, expiry: Some(9), class: OtherShielded, spends: Set(), oversize: false, actions: 2 }
   /// The second leg of the TEX payment `early` starts: transparent parts only,
   /// and its one prevout is `early`'s single-use output. The shim diverts it
   /// by its shape (#94).
   pure val tex: Payload =
-    { id: "tex", txid: Some("tex"), created: 2, expiry: Some(9), class: TransparentOnly, spends: Set("early"), oversize: false }
+    { id: "tex", txid: Some("tex"), created: 2, expiry: Some(9), class: TransparentOnly, spends: Set("early"), oversize: false, actions: 0 }
   /// An auto-shield of `late`'s output into Ironwood: a transparent spend
   /// with a shielded bundle. The shim forwards it, and its prevout names
   /// `late` (K10).
   pure val autoShield: Payload =
-    { id: "autoShield", txid: Some("autoShield"), created: 4, expiry: Some(11), class: OtherShielded, spends: Set("late"), oversize: false }
+    { id: "autoShield", txid: Some("autoShield"), created: 4, expiry: Some(11), class: OtherShielded, spends: Set("late"), oversize: false, actions: 2 }
 
   // ------------------------------------------------------------------------
   // Configurations

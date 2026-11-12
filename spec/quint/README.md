@@ -65,9 +65,9 @@ A hub answers a lookup with one of three wire replies, and the shim turns that i
 - **Network.** May lose, duplicate, delay and reorder frames. Cannot forge or read them.
 - **Observer.** Looks up txids it knows and submits payloads it has learned or the chain has published. It cannot read or forge frames, so it does not know a nonce and cannot answer the shim.
 - **Nonces** are unique. A counter stands for an unguessable value.
-- **Chain.** No reorg of an included transaction and no mempool eviction. The operator's indexer publishes nothing.
+- **Chain.** No reorg of an included transaction and no mempool eviction. The operator's indexer publishes nothing. Each block holds at most 330 units of ZIP 218 shielded cost (`blockActions`). Other traffic takes up to `maxCompeting` of them. The miner is honest and fills each block: it adds mempool transactions until no other one fits in the remaining shielded cost, and the choice among those that fit is free.
 - **Wallets.** A supported ("conforming") wallet sets an expiry at least `MIN_WALLET_EXPIRY` after the height it builds at, and its frame reaches the hub within `MAX_DELIVERY_LAG` blocks. A wallet asks only about transactions it has sent. The model also has wallets below the floor and submissions later than the delivery lag.
-- **Hub schedule** (hub specification only). How promptly the hub learns the tip depends on the configuration: at every block, up to the reorg allowance behind, or not at all for a while. Fewer blocks arrive while a flush is in flight than the mining margin reserves. The code enforces neither (findings 1, 2 and 4).
+- **Hub schedule** (hub specification only). How promptly the hub learns the tip depends on the configuration: at every block, up to the reorg allowance behind, or not at all for a while. Fewer blocks arrive while a flush is in flight than the mining margin reserves. The code enforces neither (findings 1, 2 and 4). The candidate fix of #121 also needs three relations (`budgetFitsBlock`). The per-flush budget is at most 330 minus the competing reserve, which the hub's configuration sets. The mining margin is at least one block more than the longest flight. The flush interval is at least the reorg allowance plus the mining margin: 20 >= 14 on the shipped constants.
 - **Time.** There is no clock. A timeout may happen at any moment; the staleness window is counted in blocks.
 
 ## Out of scope
@@ -89,10 +89,12 @@ A hub answers a lookup with one of three wire replies, and the shim turns that i
 | A transaction's inputs and outputs beyond the txids it spends from: output indices, values, scripts, addresses | A payload carries the txids its transparent inputs spend (`spends`) and what the shim's parser reads of its pools (`class`). Sprout, Sapling and Ironwood are one class, `OtherShielded`, because the classifier treats them alike |
 | Transaction dependencies at the node | The indexer judges each transaction on its own. #94 queues both legs of a TEX payment at the hub, and one flush may offer the second leg before the first; what a node answers then is outside the model |
 | What the hub's verdict and ack say, and the HTTP transport that waits for the verdict (`HubTransport::Http`, `--hub`) | The deployment is the mixnet (`HTTP_SUBMIT=0`): the shim tells the wallet ok without waiting, and nothing reads an ack. So in every configuration the shim's ok says only that the frame left the shim. That an accepted ack is only for a queued payload is unchecked, and a Byzantine hub's ack is modelled as truthful |
-| The hub's capacity and size refusals, the burn set's bound, and denial of service generally | Not claimed properties. The shim's own too-large refusal is modelled. A free burst of junk fills the entry cap for a flush window: finding 13. Two external reports exhausted resources outside the model: HTTP/2 streams made one connection buffer about 800 MiB in the shim (#115), and idle connections took the hub's descriptors so its publishes failed (#116). Each ends in a loss already recorded: K1 for a shim that dies after telling a wallet ok, K5 for a hub that cannot publish |
+| The hub's capacity and size refusals, the burn set's bound, and denial of service generally | Not claimed properties. The shim's own too-large refusal is modelled. A free burst of junk fills the entry cap for a flush window: finding 13. A replay of published bytes can fill the per-flush budget, as it can the entry cap. Two external reports exhausted resources outside the model: HTTP/2 streams made one connection buffer about 800 MiB in the shim (#115), and idle connections took the hub's descriptors so its publishes failed (#116). Each ends in a loss already recorded: K1 for a shim that dies after telling a wallet ok, K5 for a hub that cannot publish |
 | An observer submitting payloads of its own making | Possible, since the hub's address is public and unauthenticated. The model's observer submits only what it has learned or the chain has published. Finding 13 is what junk of its own making buys |
 | A different transaction with the same txid (a twin) | No configuration contains one. The pure wire test shows the shim would serve it (`servedOnlyOnMatchingTxidTest`): the shim compares the txid and nothing else |
 | More than one Byzantine component at once | The trust matrix is single-fault |
+| A batch mined across several blocks | It splits the batch in time. Anonymity sits outside trace properties (T17) |
+| Fee-order and byte-limit block selection | A transparent transaction has shielded cost 0. A miner that orders by fee can fill the 2 MB block with them and take no hub transaction |
 | Liveness: that anything eventually happens, such as a submitted migration being published | The network may lose everything, and nobody waits for an ack |
 
 ## Threat model
@@ -140,6 +142,7 @@ The deployment targets the server-side and network-metadata adversaries of Taylo
 | G10 | `oneAnswerPerLookup` | The wallet gets at most one answer per lookup the shim sent. G4 reads its window from the shim's waiters, so a second answer is invisible to it |  | Simulation |
 | G9 | `forwardedSpendsNoDiverted` | No transaction the shim forwards to the operator's indexer spends an output of one the shim diverted, in either order and before or after publication. Holds while every such spend has transparent parts only; a spend with a shielded bundle is K10 | T19 | Simulation; `texSecondLegIsDivertedTest` |
 | G6b | `conformingFirstOfferBeforeExpiry` | A supported wallet's transaction is offered with the mining margin to spare, the first time a hub offers it. About the margin left when the flush begins, not about acceptance; nothing about a later offer of a requeued entry | T5 | TLC, exhaustive |
+| G6c | `conformingFirstOfferMinedBeforeExpiry` | A supported wallet's transaction that a node took on its first, on-time offer is mined before it expires. Stronger than G6b: mined, where G6b says offered with the margin | T5 | TLC, exhaustive |
 | G8 | `admissionMatchesCadence` | Every entry admitted, and not requeued, survives the first flush the cadence has not spent, with the mining margin to spare against the cadence boundary. G6b is the margin at the chain height | T5 | TLC, exhaustive |
 | G7 | `wellFormedTest` | Structural sanity of the hub: a queued entry is within its attempts, a down hub holds nothing and knows nothing, and a stopped hub holds nothing | T6 | Exhaustive test over every reachable hub state |
 | A2 | `neverEvictTest` | An entry leaves the hub's queue only into a flush, because a node judged an entry with its txid and the hub burned that txid, or because the hub went down or exited after its final flush | T6 | Exhaustive test over every reachable hub state and input |
@@ -167,6 +170,7 @@ Single-fault. "holds" is a checked row on the named [configuration][configuratio
 | G9 | holds (`baseline`) | holds (`byzHub`) | holds (`byzIndexer`) |
 | G10 | holds (`baseline`) | holds (`byzHub`) | holds (`byzIndexer`) |
 | G6b | holds (`timely`, `flakyTip`) | argued, not checked: a hub that admits while it has no tip breaks it | **required**: `indexerWithholdsTipFromConformingTest`. Needs every endpoint |
+| G6c | holds (`timely`, `flakyTipBudget`) | argued, unchecked | argued, unchecked |
 | G8 | holds (`timely`, `flakyTip`, `staleLagWithSlack`) | argued, not checked | argued, not checked: admission never judges below the recorded boundary, whatever the tip. Against the cadence boundary only |
 | A3 | holds | argued, not checked: draining is an admission rule | holds |
 
@@ -193,6 +197,7 @@ Single-fault. "holds" is a checked row on the named [configuration][configuratio
 | K9 | T5 | G6b even when the expiry floor is wide enough to cover a tip silence: a stale hub's free-running clock flushes an empty queue early and spends the next epoch, so a transaction admitted after the tip returns waits a full interval | Found here (finding 2). #85 fixed admission's half (G8); the spent epoch remains, and this counterexample is unchanged | `staleLagWithSlack` | TLC, violated | `earlyFlushSpendsTheNextEpochTest` |
 | K10 | T19 | G9 for a spend that carries a shielded bundle. A wallet deshields Orchard to its own address, then auto-shields that output into Ironwood: the second transaction forwards, and its prevout names the diverted first | By design in #94: catching it needs a record of what was diverted, and the shim keeps none (`zeronym/shim/ENDPOINTS.md:208-214`) | `shieldedSpend` | simulation, violated | `shieldedSpendOfDivertedIsForwardedTest` |
 | K11 | T5 | G6b when the expiry floor covers the reorg allowance and the silence each alone. A report one below the best un-dues a flush, then a silence shorter than the staleness window delays it further: the hub flushes the allowance plus the window minus one late, while running. With the floor one block higher the shortest counterexample is K9's | Found here; not triaged. On the shipped constants K4 already loses the margin | `flakyStaleLagWithSlack` | TLC, violated | |
+| K12 | T5 | G6c: a batch that costs more than the blocks left before its tightest expiry can mine loses a supported wallet's transaction | Found here; not triaged | `flakyTip` | TLC, violated | `batchSpillsPastExpiryTest` |
 
 K1 is not an invariant because it would be false on the ordinary success path too: the wallet is told ok before the hub has the frame.
 
@@ -253,7 +258,7 @@ sh zeronym/spec/quint/check.sh
 | 3b | `quint run`, witnesses | every listed state is reached at least once; no invariant is violated on the way |
 | 4 | `tlc.sh`, one row per invariant and configuration | "holds" rows hold over every reachable state; "violated" rows are violated by a counterexample no longer than the recorded one |
 
-Quint 0.33.0 is pinned (`npx --yes @informalsystems/quint@0.33.0` by default; set `QUINT=quint` to use an installed one). Tier 4 needs Java and Apalache 0.62.1, whose jar carries TLC; without either the tier fails, it never skips. `CHECK_TIERS=simulation` runs tiers 1 to 3b and `CHECK_TIERS=tlc` tiers 1 and 4; CI runs them as two jobs. All four tiers take about six minutes on a 16-core machine. It has not been timed on a CI runner.
+Quint 0.33.0 is pinned (`npx --yes @informalsystems/quint@0.33.0` by default; set `QUINT=quint` to use an installed one). Tier 4 needs Java and Apalache 0.62.1, whose jar carries TLC; without either the tier fails, it never skips. `CHECK_TIERS=simulation` runs tiers 1 to 3b and `CHECK_TIERS=tlc` tiers 1 and 4; CI runs them as two jobs. All four tiers take about 12 minutes on a 16-core machine. It has not been timed on a CI runner.
 
 ### Configurations
 
@@ -272,12 +277,13 @@ At most 3 sends and 3 lookups by the wallet, 3 requests by the observer. The `ba
 
 #### Hub specification
 
-The schedule flushes every 3 blocks with a mining margin of 2, a delivery lag of 1, a reorg allowance of 1, a staleness window of 3 and an expiry floor of 7. It is the shipped schedule scaled down (interval 20, margin 4, lag 6, reorg allowance 10, staleness window 12 blocks, expiry floor 40), keeping the relations between the constants that the findings turn on.
+The schedule flushes every 3 blocks with a mining margin of 2, a delivery lag of 1, a reorg allowance of 1, a staleness window of 3 and an expiry floor of 7. It is the shipped schedule scaled down (interval 20, margin 4, lag 6, reorg allowance 10, staleness window 12 blocks, expiry floor 40), keeping the relations between the constants that the findings turn on. A block holds 3 units of shielded cost (shipped: 330), and other traffic takes 0 of them, or up to 1 in `flakyTipBudget`. Each migration costs 2, so the one block left after a flight takes one of `early` and `late`. `flakyTipBudget` sets a per-flush budget of 2.
 
 | Configuration | Differs from `timely` by | For |
 |---|---|---|
-| `timely` | | G6b, K5 |
-| `flakyTip` | the tip may be reported up to the reorg allowance behind | G6b under regression; G8, finding 6 |
+| `timely` | | G6b, G6c, K5 |
+| `flakyTip` | the tip may be reported up to the reorg allowance behind | G6b under regression; G8, finding 6; K12 |
+| `flakyTipBudget` | as `flakyTip`, with the candidate fix of #121: a per-flush budget of 2 and a holdoff after each relay; other traffic takes up to 1 of each block | G6c, G6b and G8 under the fix |
 | `flakyTipNoSlack` | and the expiry floor is 6, leaving no reorg slack | K3' |
 | `staleLag` | the hub may hear no tip, and goes stale | K4, K6 |
 | `staleLagWithSlack` | and the expiry floor is 8, enough to cover the silence | finding 2 |
@@ -294,16 +300,21 @@ With 8 workers, on the machine this was written on:
 
 | Configuration | Invariant | Verdict |
 |---|---|---|
-| `timely` | G6b | holds, 22 947 states, depth 40 |
-| `timely` | K6's predicate | holds, 22 947 states, depth 40 |
-| `flakyTip` | G6b | holds, 117 501 states, depth 36 |
-| `timely`; `flakyTip`; `staleLagWithSlack` | G8 | holds: 22 947; 117 501; 895 083 states |
+| `timely` | G6b | holds, 50 346 states, depth 45 |
+| `timely` | K6's predicate | holds, 50 346 states, depth 46 |
+| `flakyTip` | G6b | holds, 320 847 states, depth 46 |
+| `timely`; `flakyTip`; `staleLagWithSlack` | G8 | holds: 50 346; 320 847; 1 783 080 states |
+| `timely` | G6c | holds, 50 346 states, depth 45 |
+| `flakyTip` | G6c (K12) | violated, 18 states |
+| `flakyTipBudget` | G6c; `withinBudget`; G6b; G8 | holds, 143 107 states, depth 44 |
 | `flakyTipNoSlack` | G6b (K3') | violated, 12 states |
 | `staleLag` | G6b; K6 | violated, 13; 13 states |
 | `staleLagWithSlack` | G6b (finding 2) | violated, 19 states |
 | `flakyStaleLagWithSlack` | G6b (K11); G8 | violated, 15 states; holds, 2 461 236 states, not in the gate |
 | `timely` | K5 | violated: 5 states; 8 without a crash; 12 without a shutdown either |
 | `byzIndexer` | G6b | violated, 16 states |
+
+Block capacity added the mined set, the promised set and the miner's choice of block. The old configurations grew about 2 to 2.7 times. Every old verdict and counterexample length stayed the same. The gate took about 12 minutes on a 16-core machine with 6 rows at once.
 
 `flakyTip` had 81 518 states before the tip rule followed #92. The hub's best height is now part of its state, so a tip one below the best and the same tip as the best are distinct states. Every verdict and counterexample length stayed the same.
 
@@ -328,7 +339,7 @@ Only `protocol.qnt` and `hubMachine.qnt` declare variables, and no module declar
 | `types.qnt` | The vocabulary: payloads with their pool shape and parents, verdicts, refusals, roles, observations |
 | `wire.qnt` | The four frames; `render`, `meaning`, `interpretReply` |
 | `indexer.qnt` | The chain and indexer as a relation, honest and Byzantine |
-| `hub.qnt` | `hub(state, input)`: admission, the tip rule, the flush cycle, requeue; the Byzantine relation |
+| `hub.qnt` | `hub(state, input)`: admission, the tip rule, the flush cycle, requeue, the per-flush budget and the holdoff; the Byzantine relation |
 | `shim.qnt` | `shim(state, input)`: the classifier, routing and reply correlation |
 | `hubMachine.qnt` | The hub specification: one hub, the chain, its configurations and invariants |
 | `abstractHub.qnt` | The hub as the protocol sees it |

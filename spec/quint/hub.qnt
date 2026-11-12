@@ -29,6 +29,9 @@ module hub {
     minWalletExpiry: int,   // the smallest expiry delta a supported wallet sets
     reorgAllowance: int,    // how far back a tip report is followed
     maxAttempts: int,       // requeues an entry is allowed
+    // The candidate fix of #121, off with `None`: a flush publishes at most
+    // this much shielded cost, and each flush waits out a holdoff.
+    blockBudget: Option[int],
   }
 
   /// The startup check: a transaction that takes `deliveryLag` blocks to
@@ -69,6 +72,10 @@ module hub {
   ///   drops every queued entry carrying it. It lives in memory, like the
   ///   queue. The code keys this on bundle keys; the txid is what a re-signing
   ///   keeps.
+  /// - `holdFrom`: the tip the holdoff counts from, set only with a budget:
+  ///   the first tip adopted, then the tip at each relay's end. A new process
+  ///   starts blind to its predecessor's batch, so it holds off as after a
+  ///   relay.
   type HubState = {
     params: HubParams,
     phase: Phase,
@@ -79,6 +86,7 @@ module hub {
     flush: Flush,
     lastEpoch: Option[int],
     burned: Set[TxId],
+    holdFrom: Height,
   }
 
   /// A hub that is not running. It holds nothing: the queue lives in memory.
@@ -92,6 +100,7 @@ module hub {
     flush: Idle,
     lastEpoch: None,
     burned: Set(),
+    holdFrom: 0,
   }
 
   /// A hub that has just started and has not yet seen a tip.
@@ -206,8 +215,22 @@ module hub {
   pure def isQueuedTxid(state: HubState, txid: TxId): bool =
     state.queued().exists(payload => payload.txid == Some(txid))
 
+  /// Whether the hub runs with the per-flush budget and the holdoff.
+  pure def hasBudget(state: HubState): bool =
+    isSome(state.params.blockBudget)
+
+  /// The cadence height the holdoff ends at, counted from `from`. The relay
+  /// that set `from` may have ended up to the reorg allowance above it, so
+  /// the allowance is added before the mining margin.
+  pure def holdUntilFrom(params: HubParams, from: Height): Height =
+    from + params.reorgAllowance + params.miningMargin
+
+  pure def holdUntil(state: HubState): Height =
+    holdUntilFrom(state.params, state.holdFrom)
+
   /// Whether the cadence loop would start a flush now: the cadence clock has
   /// crossed into a new epoch, or the hub is draining and owes its final one.
+  /// With a budget, either also waits out the holdoff.
   pure def isFlushDue(state: HubState): bool =
     and {
       state.flush == Idle,
@@ -221,6 +244,7 @@ module hub {
           },
         },
       },
+      state.hasBudget() implies state.cadenceHeight() >= state.holdUntil(),
     }
 
   // ------------------------------------------------------------------------
@@ -242,14 +266,37 @@ module hub {
       | None => state.observedTip()
     }
 
-  /// Whether an entry with `expiry`, judged at `tip`, provably survives the
-  /// flush that would publish it with `miningMargin` blocks to spare. A
-  /// transaction with no expiry always does.
-  pure def survivesNextFlush(expiry: Option[Height], tip: Height, flushInterval: int, miningMargin: int): bool =
+  /// Whether an entry with `expiry` survives a flush at `at` with
+  /// `miningMargin` blocks to spare. A transaction with no expiry always does.
+  pure def survivesFlushAt(expiry: Option[Height], at: Height, miningMargin: int): bool =
     match expiry {
       | None => true
-      | Some(height) => height >= nextFlushHeight(tip, flushInterval) + miningMargin
+      | Some(height) => height >= at + miningMargin
     }
+
+  /// Whether an entry with `expiry`, judged at `tip`, provably survives the
+  /// flush that would publish it with `miningMargin` blocks to spare.
+  pure def survivesNextFlush(expiry: Option[Height], tip: Height, flushInterval: int, miningMargin: int): bool =
+    survivesFlushAt(expiry, nextFlushHeight(tip, flushInterval), miningMargin)
+
+  /// The cadence height of the next flush, judged at `height` with the
+  /// holdoff counted from `from`. Without a budget it is the next boundary.
+  /// With one it is the later of the boundary and the end of the holdoff, or
+  /// the end of the holdoff alone while draining: the final flush waits for
+  /// no boundary.
+  pure def nextFlushAt(state: HubState, height: Height, from: Height): Height =
+    val boundary = nextFlushHeight(height, state.params.flushInterval)
+    val hold = holdUntilFrom(state.params, from)
+    if (not(state.hasBudget())) boundary
+    else if (state.phase == Draining) hold
+    else if (hold > boundary) hold
+    else boundary
+
+  /// The tip the holdoff counts from, as admission reads it. While a flight
+  /// is out it is the tip, because the relay's end sets `holdFrom` to that
+  /// tip, and the tip is not observed in flight.
+  pure def admissionHoldFrom(state: HubState): Height =
+    if (state.flush == Idle) state.holdFrom else state.observedTip()
 
   /// The hub's decision on a submission, in the order the checks are made.
   /// `revealed` is the nullifier views' answer, which the hub reads on its own
@@ -260,7 +307,8 @@ module hub {
       Refused(TipStale)
     else if (state.phase == Draining)
       Refused(HubDraining)
-    else if (not(survivesNextFlush(payload.expiry, state.admissionHeight(), state.params.flushInterval, state.params.miningMargin)))
+    else if (not(survivesFlushAt(payload.expiry,
+        state.nextFlushAt(state.admissionHeight(), state.admissionHoldFrom()), state.params.miningMargin)))
       Refused(ExpiryTooTight)
     else if (revealed and hasProof(payload))
       Refused(SpentProof)
@@ -268,6 +316,12 @@ module hub {
       Duplicate
     else if (isBurned(state.burned, payload))
       Refused(SpentProof)
+    // The flight counts too: a requeue may bring all of it back.
+    else if (match state.params.blockBudget {
+        | Some(budget) => actionsOf(state.queued().union(state.inFlight())) + payload.actions > budget
+        | None => false
+      })
+      Refused(BatchFull)
     else
       Admitted
 
@@ -282,6 +336,9 @@ module hub {
   /// followed and leaves the phase and the cadence alone, so a tip that dips
   /// and climbs back is not progress. A height further below the best is
   /// ignored, so a reorg cannot be walked down one allowance at a time.
+  ///
+  /// With a budget, the first tip adopted starts the holdoff, and a draining
+  /// hub goes on observing the tip, so that its held final flush can fall due.
   pure def observeTip(state: HubState, height: Height): HubResult =
     match state.tip {
       | None =>
@@ -291,15 +348,22 @@ module hub {
             tip: Some(height),
             best: height,
             lastEpoch: Some(height / state.params.flushInterval),
+            holdFrom: if (state.hasBudget()) height else state.holdFrom,
           }.toNoHubOutput()
         else state.toHubErrorOutput("no cadence loop is running")
       | Some(_) =>
-        if (state.phase != Running and state.phase != Stale)
+        if (state.phase != Running and state.phase != Stale
+            and not(state.phase == Draining and state.hasBudget()))
           state.toHubErrorOutput("no cadence loop is running")
         else if (state.flush != Idle)
           state.toHubErrorOutput("the tip is not observed during a flush")
         else if (height > state.best)
-          { ...state, phase: Running, tip: Some(height), best: height, cadence: Tracking }.toNoHubOutput()
+          { ...state,
+            phase: if (state.phase == Draining) Draining else Running,
+            tip: Some(height),
+            best: height,
+            cadence: Tracking,
+          }.toNoHubOutput()
         else if (state.best - height <= state.params.reorgAllowance)
           { ...state, tip: Some(height) }.toNoHubOutput()
         else
@@ -332,20 +396,31 @@ module hub {
   /// A flush begins: the whole queue moves out at once. An empty queue is
   /// still a flush event. The epoch is recorded here, before the batch goes
   /// out. The final flush of a draining hub with nothing to publish stops it.
+  ///
+  /// With a budget, the final flush first drops each entry that no longer
+  /// survives a flush now, as requeue drops one that misses its flush: the
+  /// holdoff may have delayed it past that entry's margin. The process exits
+  /// after this flush, so a dropped entry is lost with it.
   pure def beginFlush(state: HubState): HubResult =
+    val kept =
+      if (state.phase == Draining and state.hasBudget())
+        state.queued().filter(payload =>
+          survivesFlushAt(payload.expiry, state.cadenceHeight(), state.params.miningMargin))
+          .mapBy(payload => state.queue.get(payload))
+      else state.queue
     if (not(state.isFlushDue()))
       state.toHubErrorOutput("no flush is due")
-    else if (state.queue == Map())
+    else if (kept == Map())
       if (state.phase == Draining)
-        { ...state, phase: Stopped }.toNoHubOutput()
+        { ...state, phase: Stopped, queue: Map() }.toNoHubOutput()
       else
         { ...state, lastEpoch: Some(state.cadenceEpoch()) }.toNoHubOutput()
     else
       { ...state,
         queue: Map(),
-        flush: Broadcasting({ batch: state.queue, unplaced: Map(), final: state.phase == Draining }),
+        flush: Broadcasting({ batch: kept, unplaced: Map(), final: state.phase == Draining }),
         lastEpoch: if (state.phase == Draining) state.lastEpoch else Some(state.cadenceEpoch()),
-      }.toBroadcastOutput(state.queued())
+      }.toBroadcastOutput(kept.keys())
 
   /// The indexer's verdict on one entry. Accepted, already-known and mined
   /// entries are published and leave; a rejected entry is dropped; a retryable
@@ -389,7 +464,8 @@ module hub {
   /// - An entry that no longer survives the next flush, judged at the observed
   ///   tip, is dropped as expired. Admission judges at `admissionHeight`,
   ///   which can be higher; requeue does not, so as not to drop an
-  ///   acknowledged entry that may still be mined.
+  ///   acknowledged entry that may still be mined. With a budget the next
+  ///   flush also waits out the holdoff this relay starts.
   /// - An entry out of attempts is dropped as exhausted. Only an entry with no
   ///   expiry gets that far.
   /// - The rest are held.
@@ -403,18 +479,21 @@ module hub {
           state.toHubErrorOutput("entries are still awaiting a verdict")
         else
           val params = state.params
+          // The relay has ended: with a budget, the holdoff counts from here.
+          val holdFrom = if (state.hasBudget()) state.observedTip() else state.holdFrom
           val returning = flush.unplaced.keys().exclude(state.queued()).filter(payload =>
             not(isBurned(state.burned, payload)))
           val expired = returning.filter(payload =>
-            not(survivesNextFlush(payload.expiry, state.observedTip(), params.flushInterval, params.miningMargin)))
+            not(survivesFlushAt(payload.expiry,
+              state.nextFlushAt(state.observedTip(), holdFrom), params.miningMargin)))
           val exhausted = returning.exclude(expired).filter(payload =>
             flush.unplaced.get(payload) + 1 > params.maxAttempts)
           val held = returning.exclude(expired).exclude(exhausted)
           val queue = state.queued().union(held).mapBy(payload =>
             if (held.contains(payload)) flush.unplaced.get(payload) + 1 else state.queue.get(payload))
           val idle =
-            if (flush.final) { ...state, phase: Stopped, queue: Map(), flush: Idle }
-            else { ...state, queue: queue, flush: Idle }
+            if (flush.final) { ...state, phase: Stopped, queue: Map(), flush: Idle, holdFrom: holdFrom }
+            else { ...state, queue: queue, flush: Idle, holdFrom: holdFrom }
           idle.toRequeuedOutput(held.size(), expired.size(), exhausted.size())
     }
 

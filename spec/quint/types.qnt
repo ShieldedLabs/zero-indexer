@@ -47,6 +47,12 @@ module types {
   ///   coinbase and for a transaction with no transparent inputs. A node
   ///   that accepts the bytes reads it, and so does the operator.
   /// - `oversize`: the bytes do not fit the fixed hub frame.
+  /// - `actions`: the transaction's ZIP 218 shielded cost, the unit a block's
+  ///   capacity is counted in: Orchard actions, Ironwood actions, Sapling
+  ///   spends and outputs, and two per JoinSplit
+  ///   (`ShieldedActionCounts::cost` in Zakura). A migration from Orchard to
+  ///   Ironwood costs 2 unpadded. Transparent-only and unparseable bytes
+  ///   cost 0.
   type Payload = {
     id: str,
     txid: Option[TxId],
@@ -55,6 +61,7 @@ module types {
     class: Class,
     spends: Set[TxId],
     oversize: bool,
+    actions: int,
   }
 
   /// Whether `payload` was built by a wallet that honours the supported expiry
@@ -95,6 +102,10 @@ module types {
         | Some(txid) => acc.union(Set(txid))
         | None => acc
       })
+
+  /// The shielded cost of a set of payloads.
+  pure def actionsOf(payloads: Set[Payload]): int =
+    payloads.fold(0, (sum, payload) => sum + payload.actions)
 
   /// The id a wallet knows its transaction by, and asks for. For bytes no
   /// parser accepts it is a name that no hub or node will ever compute.
@@ -157,7 +168,9 @@ module types {
   /// Why a hub refuses a submission, in the order admission checks them.
   /// `SpentProof`: the payload's proofs are mined, or this hub published them
   /// to a rejection or a mined verdict (`Refusal::Rejected`).
-  type Refusal = TipStale | HubDraining | ExpiryTooTight | SpentProof
+  /// `BatchFull`: the payload would take the batch past the per-flush budget
+  /// of block capacity, when the hub has one.
+  type Refusal = TipStale | HubDraining | ExpiryTooTight | SpentProof | BatchFull
 
   /// A hub's decision on a submission. `Duplicate` is a success: the bytes are
   /// already queued here.

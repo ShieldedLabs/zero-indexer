@@ -91,8 +91,8 @@ finish() {
 # being found (renamed so it no longer ends in `Test`, say) fails the gate.
 SPELLS="spells/basicSpells.qnt:6 spells/soup.qnt:4"
 MODULES="types.qnt wire.qnt indexer.qnt hub.qnt abstractHub.qnt hubMachine.qnt shim.qnt protocol.qnt"
-FUNCTIONAL="tests/wireTest.qnt:11 tests/indexerTest.qnt:14 tests/hubTest.qnt:26 tests/shimTest.qnt:14
-  tests/hubScenariosTest.qnt:25 tests/scenariosTest.qnt:22 tests/trustTest.qnt:14"
+FUNCTIONAL="tests/wireTest.qnt:11 tests/indexerTest.qnt:14 tests/hubTest.qnt:28 tests/shimTest.qnt:14
+  tests/hubScenariosTest.qnt:27 tests/scenariosTest.qnt:22 tests/trustTest.qnt:14"
 
 fail() {
   echo "FAIL  $1"
@@ -363,6 +363,7 @@ G6B=conformingFirstOfferBeforeExpiry
 K5=ackedIsHeldOrSettled
 K6=conformingEveryOfferBeforeExpiry
 G8=admissionMatchesCadence
+G6C=conformingFirstOfferMinedBeforeExpiry
 
 # The schedule guarantee with every component honest: under a timely tip, and
 # under a tip that may be reported behind the chain.
@@ -373,6 +374,14 @@ job tlc_holds    initTimely             step $G8
 job tlc_holds    initFlakyTip           step $G8                        # finding 6, fixed by #85
 job tlc_holds    initStaleLagWithSlack  step $G8                        # finding 2's admission half, fixed by #85
 
+# Block capacity. G6c under a timely tip, and the candidate fix of #121 under
+# a tip that may be reported behind the chain.
+job tlc_holds    initTimely             step $G6C
+job tlc_holds    initFlakyTipBudget     step $G6C
+job tlc_holds    initFlakyTipBudget     step withinBudget
+job tlc_holds    initFlakyTipBudget     step $G6B
+job tlc_holds    initFlakyTipBudget     step $G8
+
 # The known gaps, each on the configuration that isolates its cause. The last
 # argument is the length of TLC's counterexample.
 job tlc_violated initFlakyTipNoSlack    step $G6B 12                    # K3'
@@ -380,6 +389,7 @@ job tlc_violated initStaleLag           step $G6B 13                    # K4
 job tlc_violated initStaleLag           step $K6 13                     # K6
 job tlc_violated initStaleLagWithSlack  step $G6B 19                    # finding 2's spent epoch, not fixed by #85
 job tlc_violated initFlakyStaleLagWithSlack step $G6B 15                # K11
+job tlc_violated initFlakyTip           step $G6C 18                    # K12
 # K5, three causes: a crash; without one, a final flush nothing judged; with
 # no shutdown either, a requeue that gives the entry up as expired.
 job tlc_violated initTimely             step $K5 5
@@ -412,6 +422,16 @@ job tlc_violated initStaleLag           step "not(wStale)" 6
 job tlc_violated initStaleLagWithSlack  step "not(wStale)" 6
 job tlc_violated initFlakyTip           step "not(wAdmittedAheadOfTip)" 6
 job tlc_violated initStaleLagWithSlack  step "not(wAdmittedAheadOfTip)" 9
+job tlc_violated initTimely             step "not(wMined)" 8
+job tlc_violated initFlakyTip           step "not(wHeldOver)" 17
+job tlc_violated initFlakyTipBudget     step "not(wConformingFirstOffer)" 8
+job tlc_violated initFlakyTipBudget     step "not(wRequeued)" 10
+job tlc_violated initFlakyTipBudget     step "not(wDown)" 2
+job tlc_violated initFlakyTipBudget     step "not(wRestartedOwing)" 6
+job tlc_violated initFlakyTipBudget     step "not(wBlockInFlight)" 9
+job tlc_violated initFlakyTipBudget     step "not(wStopped)" 8
+job tlc_violated initFlakyTipBudget     step "not(wLaggedRelay)" 12      # the tip catch-up after a relay
+job tlc_violated initFlakyTipBudget     step "not(wDeferred)" 18      # one promised payload mined, another waiting
 finish
 fi
 

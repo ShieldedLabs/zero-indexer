@@ -92,6 +92,7 @@ module hubScenariosTest {
       .then(initStaleLag)
       .then(initStaleLagWithSlack)
       .then(initByzIndexer)
+      .then(initFlakyTipBudget)
       .then(initUnknownUpgrade)
       .expect(cfg == unknownUpgrade and h == startingHub(unknownUpgrade.params) and height == GENESIS_HEIGHT)
 
@@ -230,7 +231,7 @@ module hubScenariosTest {
   /// misses the mining margin by that block. With the slack, G6b holds
   /// on `flakyTip` in every reachable state.
   run conformingMissesMarginWithoutSlackTest =
-    regressedTipDelaysFlush(flakyTipNoSlack, orchard("early", 2, 8))
+    regressedTipDelaysFlush(flakyTipNoSlack, orchard("early", 2, 8, 2))
       .expect(not(reorgSlackFits(cfg)))
       .expect(not(conformingFirstOfferBeforeExpiry))
 
@@ -296,6 +297,72 @@ module hubScenariosTest {
       .then(judge(early, Accepted))
 
   // ------------------------------------------------------------------------
+  // Block capacity
+  // ------------------------------------------------------------------------
+
+  /// K12. `early` arrives at 3, after the flush at 3, and `late` at 5. The
+  /// tip is reported one behind, so the flush begins at 7. One block arrives
+  /// in flight, and the indexer relays both at 8. Together they cost 4, and a
+  /// block holds 3. Block 9 takes `late`; `early` would overflow it. Block 9
+  /// was `early`'s last, so at height 9 it is lost.
+  run batchSpillsPastExpiryTest =
+    started(flakyTip)
+      .then(blocks(2))
+      .then(flushBegin)
+      .then(deliver(early))
+      .expect(height == 3 and h.queued() == Set(early))
+      .then(blocks(2))
+      .then(deliver(late))
+      .expect(onTime == Set(early, late))
+      .then(advance.then(observeWith(5)))
+      .then(advance.then(observeWith(6)))
+      .then(flushBegin)
+      .expect(flightStart == 7 and h.inFlight() == Set(early, late) and conformingFirstOfferBeforeExpiry)
+      .then(advance)
+      .then(judge(early, Accepted))
+      .then(judge(late, Accepted))
+      .then(flushEnd)
+      .expect(height == 8 and promised == Set(early, late) and mined == Set())
+      .then(see)
+      .expect(maximalBlocks(0) == Set(Set(early), Set(late)))
+      .then(advanceWith(0, Set(late)))
+      .expect(height == 9 and mined == Set(late) and early.expiry == Some(9) and wHeldOver)
+      .expect(not(conformingFirstOfferMinedBeforeExpiry))
+
+  /// The candidate fix on the same arrivals. Adopted at 1, the hub holds off
+  /// its first flush to cadence 4, so it falls due at 5 with the tip one
+  /// behind. `late` arrives then, while `early` is queued, and the budget
+  /// refuses it. After the relay of `early` the resend is admitted for the
+  /// flush at 7, and each block takes one of them.
+  run budgetRefusesSpillTest =
+    started(flakyTipBudget)
+      .then(blocks(2))
+      .then(deliver(early))
+      .expect(height == 3 and h.queued() == Set(early))
+      .then(advance.then(observeWith(3)))
+      .then(advance.then(observeWith(4)))
+      .expect(height == 5 and h.isFlushDue())
+      .expect(decision(late) == Refused(BatchFull))
+      .then(deliver(late))
+      .expect(h.queued() == Set(early) and not(seen.contains(late)))
+      .then(flush([early], Accepted))
+      .expect(h.holdFrom == 4 and promised == Set(early))
+      .then(deliver(late))
+      .expect(h.queued() == Set(late) and onTime.contains(late) and withinBudget)
+      .then(advanceWith(1, Set(early)))
+      .then(see)
+      .expect(height == 6 and mined == Set(early) and not(h.isFlushDue()))
+      .then(block)
+      .then(flushBegin)
+      .expect(flightStart == 7 and wConformingFirstOffer and conformingFirstOfferBeforeExpiry)
+      .then(judge(late, Accepted))
+      .then(flushEnd)
+      .expect(mined == Set(early) and wDeferred)
+      .then(advanceWith(1, Set(late)))
+      .expect(height == 8 and mined == Set(early, late) and promised == Set(early, late))
+      .expect(conformingFirstOfferMinedBeforeExpiry)
+
+  // ------------------------------------------------------------------------
   // A hub that hears nothing for a while
   // ------------------------------------------------------------------------
 
@@ -332,12 +399,12 @@ module hubScenariosTest {
   /// which is the relation `staleSlackFits` asks for. The same late flush
   /// leaves the margin, and after a block in flight the node accepts.
   run sameSilenceWithSlackKeepsMarginTest =
-    silenceAcrossBoundary(staleLagWithSlack, orchard("early", 2, 10))
+    silenceAcrossBoundary(staleLagWithSlack, orchard("early", 2, 10, 2))
       .expect(staleSlackFits(cfg) and wConformingFirstOffer and conformingFirstOfferBeforeExpiry)
       .then(advance)
       .expect(height == 9)
-      .then(judge(orchard("early", 2, 10), Accepted))
-      .expect(onChain == Set(orchard("early", 2, 10)))
+      .then(judge(orchard("early", 2, 10, 2), Accepted))
+      .expect(onChain == Set(orchard("early", 2, 10, 2)))
 
   /// A stale hub's flush finds the indexer unreachable, twice. Requeue judges
   /// the entry at the observed tip, which stopped at 5: the next flush it
@@ -414,7 +481,7 @@ module hubScenariosTest {
   /// Neither half is enough alone at these numbers. Without the early flush
   /// the transaction goes out at 6; without the second silence, at 9.
   run earlyFlushSpendsTheNextEpochTest =
-    val lateAtFloor = orchard("late", 4, 12)
+    val lateAtFloor = orchard("late", 4, 12, 2)
     started(staleLagWithSlack)
       .then(unseenBlocks(3))
       .then(staleWith(6))
