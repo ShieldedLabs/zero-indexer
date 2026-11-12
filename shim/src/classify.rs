@@ -255,24 +255,24 @@ pub fn classify(raw: &[u8]) -> Class {
 ///
 /// It is written as "an Orchard bundle is present" rather than "the action count
 /// is non-zero" because the two are EXACTLY equivalent and this form cannot be
-/// fooled by an empty bundle: `orchard::ShieldedData.actions` is an
-/// `AtLeastOne<AuthorizedAction>` (zebra-chain/src/orchard/shielded_data.rs), so
+/// fooled by an empty bundle: `orchard::Bundle` keeps its actions in a
+/// `NonEmpty` (src/bundle.rs in the orchard crate), so
 /// a bundle that exists has at least one action. `orchard_action_count` reports
 /// the count as evidence, and `presence_and_action_count_agree` pins the
 /// equivalence.
 ///
-/// `orchard_shielded_data()` is version-agnostic (zebra-chain/src/transaction.rs)
-/// and returns `None` for V1..V4, where there is no Orchard bundle at all, so a
-/// transparent transaction passes through by the predicate itself rather than by
-/// a special case. A V5 Orchard spend leaks the same fact as a V6 one and is
-/// caught by the same line.
+/// `has_orchard_shielded_data()` is version-agnostic
+/// (zebra-chain/src/transaction.rs) and returns false for V1..V4, where there is
+/// no Orchard bundle at all, so a transparent transaction passes through by the
+/// predicate itself rather than by a special case. A V5 Orchard spend leaks the
+/// same fact as a V6 one and is caught by the same line.
 ///
 /// The boundary this must NOT cross: Ironwood. A V6 carrying only Ironwood
-/// actions reads `orchard_shielded_data() == None` and passes through, because
-/// Ironwood is the new pool where ordinary time-sensitive commerce lives and
-/// Zooko's time-insensitivity rationale does not extend to it.
+/// actions reads `has_orchard_shielded_data() == false` and passes through,
+/// because Ironwood is the new pool where ordinary time-sensitive commerce lives
+/// and Zooko's time-insensitivity rationale does not extend to it.
 pub fn is_orchard_touching(tx: &Transaction) -> bool {
-    tx.orchard_shielded_data().is_some()
+    tx.has_orchard_shielded_data()
 }
 
 /// The second arm: the transaction spends a transparent output and has
@@ -290,7 +290,7 @@ pub fn is_transparent_only_spend(tx: &Transaction) -> bool {
     tx.spent_outpoints().next().is_some()
         && tx.joinsplit_count() == 0
         && !tx.has_sapling_shielded_data()
-        && tx.orchard_shielded_data().is_none()
+        && !tx.has_orchard_shielded_data()
         && !tx.has_ironwood_shielded_data()
 }
 

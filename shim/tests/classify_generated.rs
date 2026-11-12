@@ -18,20 +18,36 @@
 //! ZIS_WRITE_FIXTURES=1 cargo test --test classify_generated regenerate_fixtures -- --ignored
 //! ```
 
+use orchard::{bundle::Authorized, Bundle, ValuePool};
+use zcash_protocol::{consensus::BranchId, value::ZatBalance};
 use zebra_chain::{
-    amount::{Amount, NegativeAllowed},
-    block, ironwood,
-    orchard::{Flags, ShieldedDataV6},
+    block,
     parameters::NetworkUpgrade,
     serialization::ZcashSerialize,
     transaction::{
         self,
-        arbitrary::{fake_v6_orchard_shielded_data, fake_v6_transaction},
+        arbitrary::{fake_bundle_for_branch, fake_v6_transaction},
         LockTime, Transaction,
     },
     transparent,
 };
 use zero_indexer_shim::classify::{classify, classify_with_evidence, Class};
+
+/// A one-action bundle for `pool`, valid under `branch`, with the given value
+/// balance. The proof is zero-filled but canonically sized, so the librustzcash
+/// parser inside zebra-chain accepts the bytes. Same helper zebra's own V6
+/// vector tests use.
+fn bundle(branch: BranchId, pool: ValuePool, zats: i64) -> Bundle<Authorized, ZatBalance> {
+    let balance = ZatBalance::from_i64(zats).expect("valid amount");
+    let seed = match pool {
+        ValuePool::Orchard => 1,
+        ValuePool::Ironwood => 2,
+    };
+    fake_bundle_for_branch(branch, pool, 1, seed)
+        .expect("the pool exists at this branch")
+        .try_map_value_balance::<_, (), _>(|_| Ok(balance))
+        .expect("the mapping cannot fail")
+}
 
 /// Real V6 wire bytes carrying an Orchard bundle with the given value balance,
 /// and optionally an Ironwood bundle.
@@ -42,21 +58,9 @@ use zero_indexer_shim::classify::{classify, classify_with_evidence, Class};
 ///
 /// `ironwood_zats: None` omits the Ironwood bundle entirely.
 fn v6_bytes(orchard_zats: i64, ironwood_zats: Option<i64>) -> Vec<u8> {
-    let orchard_vb: Amount<NegativeAllowed> = orchard_zats.try_into().expect("valid amount");
-
-    // fake_v6_orchard_shielded_data emits a canonically sized zero-filled halo2
-    // proof, so the librustzcash round-trip inside zebra's V6 deserializer
-    // accepts these bytes. This is the same helper zebra's own V6 round-trip
-    // test uses.
-    let orchard = ShieldedDataV6::new(fake_v6_orchard_shielded_data(
-        Flags::ENABLE_SPENDS | Flags::ENABLE_OUTPUTS,
-        orchard_vb,
-        1,
-    ));
-
     fake_v6_transaction(
         NetworkUpgrade::Nu6_3,
-        Some(orchard),
+        Some(bundle(BranchId::Nu6_3, ValuePool::Orchard, orchard_zats)),
         ironwood_zats.map(ironwood_bundle),
     )
     .zcash_serialize_to_vec()
@@ -80,39 +84,24 @@ fn v6_ironwood_only_bytes(ironwood_zats: i64) -> Vec<u8> {
 
 /// One Ironwood bundle with the given value balance. Ironwood reuses the Orchard
 /// bundle shape, so it is built from the same helper.
-fn ironwood_bundle(ironwood_zats: i64) -> ironwood::ShieldedData {
-    let vb: Amount<NegativeAllowed> = ironwood_zats.try_into().expect("valid amount");
-
-    ironwood::ShieldedData::new(ShieldedDataV6::new(fake_v6_orchard_shielded_data(
-        Flags::ENABLE_SPENDS | Flags::ENABLE_OUTPUTS,
-        vb,
-        1,
-    )))
+fn ironwood_bundle(ironwood_zats: i64) -> Bundle<Authorized, ZatBalance> {
+    bundle(BranchId::Nu6_3, ValuePool::Ironwood, ironwood_zats)
 }
 
 /// Real V5 wire bytes carrying an Orchard bundle with the given value balance.
 ///
 /// V5 is where Orchard bundles first appeared, and a V5 Orchard spend leaks the
 /// same fact as a V6 one, so the classifier must catch it with no version guard
-/// to help it. Built by constructing the variant directly, because zebra-chain's
-/// arbitrary helpers only offer a V6 constructor; the Orchard bundle helper is
-/// shared, since V6 wraps the same `orchard::ShieldedData` this takes.
+/// to help it.
 fn v5_orchard_bytes(orchard_zats: i64) -> Vec<u8> {
-    let orchard_vb: Amount<NegativeAllowed> = orchard_zats.try_into().expect("valid amount");
-
-    Transaction::V5 {
-        network_upgrade: NetworkUpgrade::Nu5,
-        lock_time: LockTime::unlocked(),
-        expiry_height: block::Height(0),
-        inputs: Vec::new(),
-        outputs: Vec::new(),
-        sapling_shielded_data: None,
-        orchard_shielded_data: Some(fake_v6_orchard_shielded_data(
-            Flags::ENABLE_SPENDS | Flags::ENABLE_OUTPUTS,
-            orchard_vb,
-            1,
-        )),
-    }
+    Transaction::test_v5_with_orchard(
+        NetworkUpgrade::Nu5,
+        Vec::new(),
+        Vec::new(),
+        LockTime::unlocked(),
+        block::Height(0),
+        Some(bundle(BranchId::Nu5, ValuePool::Orchard, orchard_zats)),
+    )
     .zcash_serialize_to_vec()
     .expect("v5 transaction serializes")
 }
@@ -144,30 +133,27 @@ fn p2pkh_output() -> transparent::Output {
 /// Real V6 wire bytes with one P2PKH output, the given transparent inputs, and
 /// optionally an Ironwood bundle. No Orchard or Sapling bundle.
 fn v6_transparent_bytes(inputs: Vec<transparent::Input>, ironwood_zats: Option<i64>) -> Vec<u8> {
-    Transaction::V6 {
-        network_upgrade: NetworkUpgrade::Nu6_3,
-        lock_time: LockTime::unlocked(),
-        expiry_height: block::Height(0),
+    Transaction::test_v6_with_bundles(
+        NetworkUpgrade::Nu6_3,
         inputs,
-        outputs: vec![p2pkh_output()],
-        sapling_shielded_data: None,
-        orchard_shielded_data: None,
-        ironwood_shielded_data: ironwood_zats.map(ironwood_bundle),
-    }
+        vec![p2pkh_output()],
+        LockTime::unlocked(),
+        block::Height(0),
+        None,
+        ironwood_zats.map(ironwood_bundle),
+    )
     .zcash_serialize_to_vec()
     .expect("v6 transaction serializes")
 }
 
 /// Real V4 wire bytes spending one prevout to one P2PKH output.
 fn v4_transparent_bytes() -> Vec<u8> {
-    Transaction::V4 {
-        inputs: vec![prevout()],
-        outputs: vec![p2pkh_output()],
-        lock_time: LockTime::unlocked(),
-        expiry_height: block::Height(0),
-        joinsplit_data: None,
-        sapling_shielded_data: None,
-    }
+    Transaction::test_v4(
+        vec![prevout()],
+        vec![p2pkh_output()],
+        LockTime::unlocked(),
+        block::Height(0),
+    )
     .zcash_serialize_to_vec()
     .expect("v4 transaction serializes")
 }
@@ -213,7 +199,7 @@ fn every_orchard_touching_transaction_is_a_migration_whatever_the_destination() 
 #[test]
 fn a_v5_orchard_spend_is_a_migration() {
     // There is no version guard, and this is why it can be absent.
-    // zebra-chain's orchard_shielded_data() is version-agnostic, so a
+    // zebra-chain's has_orchard_shielded_data() is version-agnostic, so a
     // pre-Ironwood V5 Orchard spend is caught by exactly the same line.
     let evidence = classify_with_evidence(&v5_orchard_bytes(250_000));
     println!("{evidence:?}");
@@ -342,18 +328,12 @@ fn an_ironwood_funded_first_leg_is_a_pass_through() {
 
 #[test]
 fn orchard_actions_with_a_transparent_input_take_the_orchard_arm() {
-    let mut tx = fake_v6_transaction(
+    let tx = fake_v6_transaction(
         NetworkUpgrade::Nu6_3,
-        Some(ShieldedDataV6::new(fake_v6_orchard_shielded_data(
-            Flags::ENABLE_SPENDS | Flags::ENABLE_OUTPUTS,
-            Amount::<NegativeAllowed>::try_from(250_000).expect("valid amount"),
-            1,
-        ))),
+        Some(bundle(BranchId::Nu6_3, ValuePool::Orchard, 250_000)),
         None,
-    );
-    if let Transaction::V6 { inputs, .. } = &mut tx {
-        inputs.push(prevout());
-    }
+    )
+    .with_transparent_inputs(vec![prevout()]);
     let evidence = classify_with_evidence(
         &tx.zcash_serialize_to_vec()
             .expect("v6 transaction serializes"),
@@ -386,9 +366,8 @@ fn generated_bytes_survive_the_full_consumption_check() {
 
 /// Rewrite the committed fixtures in `tests/fixtures/`. Ignored by default.
 ///
-/// The bytes are not reproducible: the dummy Orchard action comes from
-/// proptest's entropy-seeded `TestRunner::default()`, so each run produces
-/// different but equally valid bytes. Never assert on their hashes.
+/// The dummy actions come from fixed seeds, but zebra-chain decides how they are
+/// built and may change it in any release. Never assert on their hashes.
 #[test]
 #[ignore = "writes tests/fixtures/, run explicitly with ZIS_WRITE_FIXTURES=1"]
 fn regenerate_fixtures() {

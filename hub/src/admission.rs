@@ -122,7 +122,7 @@ impl Inspected {
                 return false;
             }
         }
-        batch.validate(rand08::rngs::OsRng)
+        batch.validate(rand010::rng())
     }
 }
 
@@ -161,7 +161,7 @@ pub fn inspect(tx_bytes: &[u8]) -> Inspected {
         .filter(|height| *height != 0);
     inspected.transparent_outputs = tx.outputs().len();
 
-    if tx.orchard_shielded_data().is_some() {
+    if tx.has_orchard_shielded_data() {
         if let Some(pending) = prove_candidate(&tx) {
             inspected.bundle_keys = pending.bundles.iter().map(bundle_key).collect();
             // The Orchard bundle comes first, and is present: this arm needs it.
@@ -251,7 +251,7 @@ fn is_transparent_only_spend(tx: &Transaction) -> bool {
     tx.spent_outpoints().next().is_some()
         && tx.joinsplit_count() == 0
         && !tx.has_sapling_shielded_data()
-        && tx.orchard_shielded_data().is_none()
+        && !tx.has_orchard_shielded_data()
         && !tx.has_ironwood_shielded_data()
 }
 
@@ -360,22 +360,39 @@ pub(crate) mod tests {
 
     /// `tx` with one transparent input added, its Orchard data untouched.
     pub(crate) fn with_transparent_input(tx: &[u8]) -> Vec<u8> {
-        use zebra_chain::serialization::ZcashSerialize;
-        use zebra_chain::transparent::{Input, Script};
+        use zcash_primitives::transaction::{Transaction as RawTx, TransactionData};
+        use zcash_protocol::consensus::BranchId;
+        use zcash_transparent::bundle::{Authorized, Bundle, OutPoint, TxIn};
 
-        let mut tx = Transaction::zcash_deserialize(tx).expect("a fixture parses");
-        let Transaction::V6 { inputs, .. } = &mut tx else {
-            panic!("a V6 fixture");
-        };
-        inputs.push(Input::PrevOut {
-            outpoint: OutPoint {
-                hash: zebra_chain::transaction::Hash([1; 32]),
-                index: 0,
-            },
-            unlock_script: Script::new(&[]),
-            sequence: u32::MAX,
+        // The branch id argument only matters for V4 and older.
+        let tx = RawTx::read(tx, BranchId::Nu6_3)
+            .expect("a fixture parses")
+            .into_data();
+        let mut transparent = tx.transparent_bundle().cloned().unwrap_or(Bundle {
+            vin: vec![],
+            vout: vec![],
+            authorization: Authorized,
         });
-        tx.zcash_serialize_to_vec().expect("serializes")
+        transparent.vin.push(TxIn::from_parts(
+            OutPoint::new([1; 32], 0),
+            zebra_chain::transparent::Script::new(&[]).into(),
+            u32::MAX,
+        ));
+        let mut bytes = Vec::new();
+        TransactionData::from_parts_v6(
+            tx.consensus_branch_id(),
+            tx.lock_time(),
+            tx.expiry_height(),
+            Some(transparent),
+            tx.sapling_bundle().cloned(),
+            tx.orchard_bundle().cloned(),
+            tx.ironwood_bundle().cloned(),
+        )
+        .freeze()
+        .expect("a V6 transaction freezes")
+        .write(&mut bytes)
+        .expect("writing to a Vec cannot fail");
+        bytes
     }
 
     #[test]

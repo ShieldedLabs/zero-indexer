@@ -37,7 +37,7 @@ other.
 
 - **Binary name and entrypoint** (`zero-indexer-hub`, `/zero-indexer-hub`).
 - The context is the same shape as the shim's: `hub/` and `vendor/` at the
-  context root, with `zebra-chain` (`=12.0.0`) and `zaino-proto` (`=0.6.0`)
+  context root, with `zebra-chain` (`=15.0.0`) and `zaino-proto` (`=0.6.0`)
   from crates.io, pinned by the committed `Cargo.lock`. The hub broadcasts
   through an indexer's `CompactTxStreamer`, so it carries `zaino-proto` exactly
   as the shim does, with the same `default-features = false` requirement and the

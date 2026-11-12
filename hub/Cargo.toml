@@ -32,7 +32,7 @@ path = "src/main.rs"
 # Compile the Nym mixnet driver (src/nym_driver.rs) and link nym-sdk. Off by
 # default: the shipped clearnet binary does not carry the SDK, so its
 # reproducible measurement is unchanged. The enclave build turns this on.
-mixnet-driver = ["dep:nym-sdk"]
+mixnet-driver = ["dep:nym-sdk", "dep:ed25519-zebra-4"]
 # The driver's localnet path: connect to the mixnet the nymnet harness starts
 # from a hardcoded topology file, for the end-to-end test. Test-only; the
 # production driver never loads a topology, so nym-topology stays out of the
@@ -48,16 +48,16 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(zcash_unstable, values("zf
 # The real Zcash parser, at the shim's exact pin. The hub re-parses every
 # migration it receives rather than trusting the shim, so it needs exactly the
 # parser the shim used.
-zebra-chain = "=12.0.0"
+zebra-chain = "=15.0.0"
 
 # The Halo2 verifier behind admission (src/admission.rs): a submission that
 # touches Orchard must carry proofs that verify, so junk costs its sender one
 # proof per entry. Already in the graph through zebra-chain, with the same
-# `circuit` feature, so this adds no crate to the lockfile. `rand08` is the rand
+# `circuit` feature, so this adds no crate to the lockfile. `rand010` is the rand
 # that orchard's batch validator takes; the queue's shuffle keeps using `rand`.
-orchard = "0.15"
-rand08 = { package = "rand", version = "0.8" }
-zcash_protocol = "0.10"
+orchard = "0.16"
+rand010 = { package = "rand", version = "0.10" }
+zcash_protocol = "0.11"
 
 # CompactTxStreamer types for the indexer hop (SendTransaction, GetLightdInfo).
 # default-features = false is REQUIRED, not tidiness: the default "heavy" feature
@@ -131,6 +131,12 @@ rand = "0.9"
 # conflict this drags in is resolved by the [patch] at the bottom of this file.
 nym-sdk = { git = "https://github.com/nymtech/nym", tag = "nym-binaries-v2026.15-bydgoszcz", optional = true }
 
+# cosmwasm-crypto, deep in nym-sdk's credential code, calls ed25519-zebra 4's
+# batch verifier without asking for the `alloc` feature it needs, so it only
+# builds when another crate turns that on. zebra-chain 15 moved to
+# ed25519-zebra 5 and nothing else does, so this turns it on. Never used here.
+ed25519-zebra-4 = { package = "ed25519-zebra", version = "4", default-features = false, features = ["alloc"], optional = true }
+
 # Only for the localnet end-to-end test (the mixnet-localnet feature): loads the
 # hardcoded topology the nymnet harness writes so the driver connects to the
 # local mixnet instead of the default network. Never in the production driver.
@@ -141,9 +147,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "test-util"] }
 
 # Only for tests/proven_fixtures.rs, which builds the V6 transactions with real
 # proofs that the admission tests verify. All already in the lockfile.
-zcash_primitives = "0.30"
-zcash_transparent = "0.10"
-incrementalmerkletree = "0.8"
+zcash_primitives = "0.31"
+zcash_transparent = "0.11"
+incrementalmerkletree = "0.9"
 
 # The admission tests verify real Halo2 proofs, and building the verifying key
 # alone takes minutes at opt-level 0. The release build is unaffected.

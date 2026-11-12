@@ -185,7 +185,7 @@ vendor/webpki-roots-0.2{4.0,5.4}/      the eMudhra-distrust [patch] targets
 
 `shim/` and `vendor/` are siblings, as in the repo, so the shim's `../vendor/*`
 path references resolve unchanged inside the image. **No manifest is edited
-anywhere.** `zebra-chain` (`=12.0.0`) and `zaino-proto` (`=0.6.0`) come from
+anywhere.** `zebra-chain` (`=15.0.0`) and `zaino-proto` (`=0.6.0`) come from
 crates.io during `cargo fetch --locked`, pinned by the checksums in the committed
 `Cargo.lock`. The context layout is the one the shim keeps after it moves to its
 own repository, so the move leaves the in-image paths and the hash unchanged.
@@ -471,8 +471,8 @@ predicate. It was `is_orchard_exit(tx) := orchard_value_balance > 0`. It is now
 is_orchard_touching(tx) := tx has at least one Orchard action
 ```
 
-implemented as `tx.orchard_shielded_data().is_some()`, because an Orchard bundle
-is an `AtLeastOne` and so presence and a non-zero action count are the same fact.
+implemented as `tx.has_orchard_shielded_data()`, because an Orchard bundle
+keeps its actions in a `NonEmpty` and so presence and a non-zero action count are the same fact.
 `orchard_value_balance` is demoted to evidence and gates nothing. Orchard only:
 a transaction carrying only Ironwood actions still passes through, deliberately,
 and no Ironwood arm may be added. `src/classify.rs`, `src/intercept.rs` and
