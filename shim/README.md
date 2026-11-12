@@ -142,7 +142,7 @@ Three precisions to keep straight:
   action count is non-zero" because the two are *exactly* equivalent and the
   first form cannot be fooled by an empty bundle:
   `orchard::ShieldedData.actions` is an `AtLeastOne<AuthorizedAction>`
-  (`zebra/zebra-chain/src/orchard/shielded_data.rs`), so a bundle that exists
+  (`src/orchard/shielded_data.rs` in `zebra-chain`), so a bundle that exists
   carries at least one action. `presence_and_action_count_agree` pins the
   equivalence, and a `debug_assert` in `classify_with_evidence` fires in debug
   and in CI if it ever stops holding.
@@ -397,15 +397,13 @@ node, which is why it is not here.
 
 ## Notes for whoever picks this up
 
-* `zebra-chain` and `zaino-proto` are **path dependencies on the vendored
-  subtrees**. `zaino-proto` must stay `default-features = false`: its `heavy`
-  feature lets its `build.rs` find `protoc` and regenerate its committed protos
-  inside the vendored tree, and it also pulls a second `zebra-chain` from
-  crates.io. `git status --porcelain zaino/ zebra/` must stay empty after a
-  build; that is the tripwire.
-* Containerizing this will break on those path deps unless the image uses a
-  repo-root build context. That is the same failure that reverted the orchard
-  vendored-path pilot (e9e8c15d91).
+* `zebra-chain` and `zaino-proto` are **exact-version crates.io pins**
+  (`=12.0.0`, `=0.6.0`), fixed by `Cargo.lock` checksums. `zaino-proto` must
+  stay `default-features = false`: its `heavy` feature lets its `build.rs` find
+  `protoc` and regenerate its committed protos, and it also pulls a second,
+  type-incompatible `zebra-chain`. The build sets no `PROTOC`.
+* The container build context is `shim/` plus `vendor/`, assembled by
+  `deploy/assemble.sh`; see `deploy/README.md`.
 * Diversion plugs into `intercept::send_transaction`, as one branch on
   `inspection.treat_as_migration()` right after the log.
 
