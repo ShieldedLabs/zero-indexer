@@ -29,9 +29,9 @@ The wallet's TLS session ends inside the shim enclave, which acts as the wallet'
 |---|---|---|
 | Requests covered | Diverted sends and `GetTransaction`. Every other RPC reaches the operator. | **All requests: sync, queries, sends.** |
 | Trust anchor | **Attestation: reproducible build, all three PCRs checkable by anyone.** | Contract: Fastly and ZODL stay separate and keep logs apart. |
-| Against an active operator | Caution and AWS see the IP. The operator sees queries. Linking needs collusion. We advise against BYOC, which hands the operator both. | Linking needs Fastly and ZODL to collude. |
+| Against an active operator | Caution and AWS see the IP. The operator sees each connection's timing and upload size, and which `SendTransaction` went missing from its indexer. At today's batch size of one, that links the wallet to the published transaction ([README](README.md), Not protected). Larger batches give a conditional anonymity set. We advise against BYOC, which also hands the operator the parent host. | Linking needs Fastly and ZODL to collude. |
 | Wallet support | **Any wallet, zero changes.** | ZODL wallet only. Relay and gateway URLs are fixed at build time. |
-| Manual server | **Protected wherever the operator runs the shim.** | Falls back to plain gRPC. |
+| Manual server | **Protected wherever the operator runs the shim with hub diversion on (phase 2).** A forward-only shim (phase 1) only classifies and logs ([OPERATORS.md](shim/deploy/caution/OPERATORS.md)). | Falls back to plain gRPC. |
 | Where content concentrates | **Spread across operators.** | One gateway sees every PWS user's queries. |
 | Broadcast | **Hub batches and publishes. P2P sees the hub as origin.** Batch size today: 1. | Sent from ZODL's backend. No batching. |
 | Key handling | Key born in the enclave. Certificates appear in CT logs. | Signed key config over DNS, rotated every 6 hours. |
@@ -40,13 +40,13 @@ Bold marks the stronger side of each row.
 
 ## Our edges
 
-- The shim works for every wallet today. This includes ZODL users who pick a community server.
+- The shim works for every wallet today. This includes ZODL users who pick a community server that runs a diverting shim.
 - Anyone can check our guarantee. PWS users trust a contract.
 - The hub batches broadcasts and hides the origin from P2P. PWS sends each transaction alone from ZODL's backend.
 
 ## Gaps to close
 
-- `GetTaddressTxids`, `GetTaddressBalance` and `GetAddressUtxos` reach the operator. From them the operator recovers a diverted send's txid and value. Route them to the zero-indexer, as planned in [ENDPOINTS.md](shim/ENDPOINTS.md).
+- The transparent-address RPCs reach the operator: `GetTaddressTransactions`, `GetTaddressTxids`, `GetAddressUtxos`, `GetAddressUtxosStream`, `GetTaddressBalance` and `GetTaddressBalanceStream`. From them the operator recovers a diverted send's txid and value. Route them to the zero-indexer. [ENDPOINTS.md](shim/ENDPOINTS.md) lists the full INTERCEPT set, which also covers the mempool RPCs and `GetLatestTreeState`.
 - The wallet's upload is unpadded, so its size matches it to a batch member.
 - A batch of one gives no anonymity set.
 
