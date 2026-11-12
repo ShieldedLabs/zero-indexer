@@ -316,9 +316,10 @@ module hub {
       Duplicate
     else if (isBurned(state.burned, payload))
       Refused(SpentProof)
-    // The flight counts too: a requeue may bring all of it back.
+    // The flight counts too: a requeue may bring all of it back. A resend of
+    // bytes in flight costs them once.
     else if (match state.params.blockBudget {
-        | Some(budget) => actionsOf(state.queued().union(state.inFlight())) + payload.actions > budget
+        | Some(budget) => actionsOf(state.queued().union(state.inFlight()).union(Set(payload))) > budget
         | None => false
       })
       Refused(BatchFull)

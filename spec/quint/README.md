@@ -94,6 +94,7 @@ A hub answers a lookup with one of three wire replies, and the shim turns that i
 | A different transaction with the same txid (a twin) | No configuration contains one. The pure wire test shows the shim would serve it (`servedOnlyOnMatchingTxidTest`): the shim compares the txid and nothing else |
 | More than one Byzantine component at once | The trust matrix is single-fault |
 | A batch mined across several blocks | It splits the batch in time. Anonymity sits outside trace properties (T17) |
+| Mined status in what the indexer reports | Blocks record what they include in `mined`, which G6c reads. The indexer's view (`chain`) keeps every relayed transaction in the mempool, so a lookup never answers mined and a resend never meets `AlreadyMined` |
 | Fee-order and byte-limit block selection | A transparent transaction has shielded cost 0. A miner that orders by fee can fill the 2 MB block with them and take no hub transaction |
 | Liveness: that anything eventually happens, such as a submitted migration being published | The network may lose everything, and nobody waits for an ack |
 
@@ -306,7 +307,7 @@ With 8 workers, on the machine this was written on:
 | `timely`; `flakyTip`; `staleLagWithSlack` | G8 | holds: 50 346; 320 847; 1 783 080 states |
 | `timely` | G6c | holds, 50 346 states, depth 45 |
 | `flakyTip` | G6c (K12) | violated, 18 states |
-| `flakyTipBudget` | G6c; `withinBudget`; G6b; G8 | holds, 143 107 states, depth 44 |
+| `flakyTipBudget` | G6c; `withinBudget`; G6b; G8 | holds, 152 797 states, depth 44 |
 | `flakyTipNoSlack` | G6b (K3') | violated, 12 states |
 | `staleLag` | G6b; K6 | violated, 13; 13 states |
 | `staleLagWithSlack` | G6b (finding 2) | violated, 19 states |

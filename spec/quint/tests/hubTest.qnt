@@ -165,6 +165,8 @@ module hubTest {
     assert(admission(budgetFull, pA, false) == Duplicate),
     assert(admission(budgetFull, pJunk, false) == Admitted),
     assert(admission(budgetFull.after(TipHInput(5)).after(FlushDueHInput), pC, false) == Refused(BatchFull)),
+    // A resend of bytes in flight is admitted under a full budget: it costs once.
+    assert(admission(budgeted(2).after(submit(pC)).after(TipHInput(5)).after(FlushDueHInput), pC, false) == Admitted),
     // Every refusal is produced, and a refusal changes nothing.
     assert(REFUSALS.forall(refusal =>
       tuples(STATES.union(Set(budgetFull)), PAYLOADS).exists(((state, payload)) =>
