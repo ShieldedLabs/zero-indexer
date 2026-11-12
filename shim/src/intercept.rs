@@ -896,7 +896,7 @@ fn inspect(headers: &HeaderMap, frame: &[u8]) -> (Inspection, Option<Bytes>) {
 /// Orchard/Ironwood/Sapling value balances, action count, input/output counts
 /// and length; the failsafe arms additionally logged a hex prefix of the raw
 /// body. In an enclave the log reaches the parent host, so that was a
-/// fingerprint the operator could hold for 25 minutes and match against the
+/// fingerprint the operator could hold until the flush and match against the
 /// batch when it published -- exactly the wallet-to-txid link the shim exists to
 /// break. The `TooLarge` arm in `send_transaction` already refused to log the
 /// size for this reason; the rest of the file had not caught up.

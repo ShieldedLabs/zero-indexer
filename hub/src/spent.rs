@@ -49,8 +49,8 @@ use crate::batcher::TipTracker;
 use crate::chain::ChainClient;
 use crate::config::Network;
 
-/// How often the set catches up with the tip. A block every 75 s, so a copy
-/// of a just-mined transaction passes for at most about a block.
+/// How often the set catches up with the tip. A block every 25 s since NU7,
+/// so a copy of a just-mined transaction passes for at most about two blocks.
 pub const SYNC_INTERVAL: Duration = Duration::from_secs(30);
 
 /// How many blocks below what it last read each sync reads again. The tip

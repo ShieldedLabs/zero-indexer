@@ -151,7 +151,7 @@ fn lane_index(lane: Lane) -> usize {
 /// unanimous `Anchor` once the tip is fresh and the observed height is above
 /// the mark. A split answer and an `Anchor` that is not due are put back, and
 /// this counts those flushes on the entry. A resend starts at zero.
-/// Eight flushes is a few hours at the production cadence.
+/// Eight flushes is a little over an hour at the production cadence.
 pub const MAX_REQUEUE_ATTEMPTS: u32 = 8;
 
 /// Why a submission was not admitted.

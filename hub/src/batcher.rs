@@ -26,14 +26,14 @@
 //! ([`crate::tip_guard`]). Liveness counts only new highs, so an oscillating tip
 //! goes stale and the cadence free-runs. Staleness is a wall-clock fact (no
 //! node has advanced for [`TIP_STALE_AFTER`]), not an absence of answers, and
-//! it stops *admission* rather than causing a flush. The 15-minute threshold is
-//! not arbitrary: block arrivals are Poisson at ~75 s, so a 3-block threshold
-//! would fire about 57 times a day, while 15 minutes is roughly one false
-//! positive every 140 days.
+//! it stops *admission* rather than causing a flush. The threshold is 12 blocks
+//! at the target, 5 minutes since NU7: arrivals are Poisson, so 3 blocks would
+//! fire about 170 times a day and 12 about once in 47 days. A stall holds the
+//! cadence back that long, so it has to stay inside a flush interval.
 //!
 //! **What is left inside the bounds.** One operator answering for every
 //! endpoint can still (a) shift flush timing within the plausible rate, about
-//! twice the flush rate in a burst and 15% faster over a day; (b) hold a steady
+//! twice the flush rate in a burst and 9% faster over a day; (b) hold a steady
 //! lead of about 16 blocks, which refuses tight expiries for as long as it is
 //! held; (c) hold the tip still, or keep it jumping through the warm-up, which
 //! closes admission; (d) drip low answers slowly enough to keep liveness while
@@ -58,7 +58,7 @@ use crate::queue::Queue;
 use crate::tip_guard;
 use crate::BoxError;
 
-/// Blocks between flushes. Twenty blocks is roughly 25 minutes.
+/// Blocks between flushes. Twenty blocks is about eight minutes since NU7.
 pub const FLUSH_INTERVAL_BLOCKS: u32 = 20;
 
 /// Blocks reserved for the batch to actually get mined after publication.
@@ -80,8 +80,8 @@ pub const MIN_WALLET_EXPIRY: u32 = 40;
 /// larger than this is a lagging or hostile node and is ignored.
 const REORG_ALLOWANCE: u32 = 10;
 
-/// No node advancing for this long means the tip is stale.
-const TIP_STALE_AFTER: Duration = Duration::from_secs(15 * 60);
+/// No node advancing for 12 target block times means the tip is stale.
+const TIP_STALE_AFTER: Duration = Duration::from_secs(12 * NOMINAL_BLOCK_SECS);
 
 /// Nominal block interval, used only to free-run the cadence while the tip is
 /// stale. During a real stall blocks arrive slower than this, so the free-running
@@ -864,6 +864,26 @@ mod tests {
     }
 
     #[test]
+    fn a_stalled_tip_holds_the_cadence_back_by_at_most_twelve_blocks() {
+        // A stall freezes the cadence until the tip goes stale, and every block
+        // mined meanwhile comes out of a queued expiry. Fifteen minutes was 12
+        // blocks at 75 s, inside a flush interval. At 25 s it is 36, more than
+        // a whole one.
+        let tip = TipTracker::new(TipGuard::Unguarded);
+        tip.observe(&[1000]);
+        tip.age_last_advance_for_test(Duration::from_secs(11 * NOMINAL_BLOCK_SECS));
+        assert!(!tip.is_stale(), "an 11-block gap is not a stall");
+        assert_eq!(tip.cadence_height(), 1000);
+
+        tip.age_last_advance_for_test(Duration::from_secs(2 * NOMINAL_BLOCK_SECS));
+        assert!(tip.is_stale(), "a 13-block gap is a stall");
+        assert!(
+            tip.cadence_height() > 1000,
+            "the cadence still stood at 1000 after 13 blocks"
+        );
+    }
+
+    #[test]
     fn a_reorg_cannot_be_walked_down_one_allowance_at_a_time() {
         let tip = TipTracker::new(TipGuard::Unguarded);
         tip.observe(&[1000]);
@@ -884,7 +904,7 @@ mod tests {
 
     /// Sixty days past the anchor, and the height on schedule then.
     const UNIX: u64 = tip_guard::ANCHOR_EPOCH + 60 * 24 * 60 * 60;
-    const ON_SCHEDULE: u32 = tip_guard::ANCHOR_HEIGHT + 69_120;
+    const ON_SCHEDULE: u32 = tip_guard::ANCHOR_HEIGHT + 207_360;
 
     /// A warm mainnet tracker: it boots one block behind ON_SCHEDULE and warms
     /// at ON_SCHEDULE once the minimum warm-up has passed. Returns the instant
@@ -945,7 +965,7 @@ mod tests {
     fn a_jump_across_the_next_flush_boundary_is_dropped() {
         // The report's drain: any jump past the next 20-block boundary flushed
         // at once. Twenty-one blocks in the 30 s since the last new high is
-        // past what the chain can climb (6).
+        // past what the chain can climb (9).
         let (tip, warm) = warm_mainnet();
         let (now, unix) = at(warm, 30);
         tip.observe_at(&[ON_SCHEDULE + FLUSH_INTERVAL_BLOCKS + 1], now, unix);
