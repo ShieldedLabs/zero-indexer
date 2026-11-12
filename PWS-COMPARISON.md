@@ -21,7 +21,7 @@ flowchart LR
   end
 ```
 
-The wallet's TLS session ends inside the shim enclave, which acts as the wallet's lightwalletd. The parent host only relays encrypted bytes.
+The wallet's TLS session ends inside the shim enclave, which acts as the wallet's lightwalletd. The parent host only relays encrypted bytes. The diagram shows the managed Caution deployment we recommend. In BYOC, which we advise against, the operator runs the parent host and sees what it sees.
 
 ## Side by side
 
