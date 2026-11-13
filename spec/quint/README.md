@@ -259,7 +259,7 @@ sh zeronym/spec/quint/check.sh
 | 3b | `quint run`, witnesses | every listed state is reached at least once; no invariant is violated on the way |
 | 4 | `tlc.sh`, one row per invariant and configuration | "holds" rows hold over every reachable state; "violated" rows are violated by a counterexample no longer than the recorded one |
 
-Quint 0.33.0 is pinned (`npx --yes @informalsystems/quint@0.33.0` by default; set `QUINT=quint` to use an installed one). Tier 4 needs Java and Apalache 0.62.1, whose jar carries TLC; without either the tier fails, it never skips. `CHECK_TIERS=simulation` runs tiers 1 to 3b and `CHECK_TIERS=tlc` tiers 1 and 4; CI runs them as two jobs. All four tiers take about 10 minutes on a 16-core machine. It has not been timed on a CI runner.
+Quint 0.33.0 is pinned (`npx --yes @informalsystems/quint@0.33.0` by default; set `QUINT=quint` to use an installed one). Tier 4 needs Java and Apalache 0.62.1, whose jar carries TLC; without either the tier fails, it never skips. `CHECK_TIERS=simulation` runs tiers 1 to 3b and `CHECK_TIERS=tlc` tiers 1 and 4; CI runs them as separate jobs. `CHECK_SHARD=I/N` runs every N-th row from row I, and CI splits tier 4 over three runners this way. All four tiers take about 10 minutes on a 16-core machine. It has not been timed on a CI runner.
 
 ### Configurations
 
