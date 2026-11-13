@@ -322,12 +322,12 @@ module hubScenariosTest {
       .then(judge(early, Accepted))
       .then(judge(late, Accepted))
       .then(flushEnd)
-      .expect(height == 8 and promised == Set(early, late) and mined == Set())
+      .expect(height == 8 and onChain == Set(early, late) and mined == Set())
       .then(see)
       .expect(maximalBlocks(0) == Set(Set(early), Set(late)))
       .then(advanceWith(0, Set(late)))
       .expect(height == 9 and mined == Set(late) and early.expiry == Some(9) and wHeldOver)
-      .expect(not(conformingFirstOfferMinedBeforeExpiry))
+      .expect(not(conformingMinedBeforeExpiry))
 
   /// The candidate fix on the same arrivals. Adopted at 1, the hub holds off
   /// its first flush to cadence 4, so it falls due at 5 with the tip one
@@ -346,7 +346,7 @@ module hubScenariosTest {
       .then(deliver(late))
       .expect(h.queued() == Set(early) and not(seen.contains(late)))
       .then(flush([early], Accepted))
-      .expect(h.holdFrom == 4 and promised == Set(early))
+      .expect(h.holdFrom == 4 and onChain == Set(early))
       .then(deliver(late))
       .expect(h.queued() == Set(late) and onTime.contains(late) and withinBudget)
       .then(advanceWith(1, Set(early)))
@@ -359,8 +359,8 @@ module hubScenariosTest {
       .then(flushEnd)
       .expect(mined == Set(early) and wDeferred)
       .then(advanceWith(1, Set(late)))
-      .expect(height == 8 and mined == Set(early, late) and promised == Set(early, late))
-      .expect(conformingFirstOfferMinedBeforeExpiry)
+      .expect(height == 8 and mined == Set(early, late) and onChain == Set(early, late))
+      .expect(conformingMinedBeforeExpiry)
 
   // ------------------------------------------------------------------------
   // A hub that hears nothing for a while

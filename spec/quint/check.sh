@@ -363,7 +363,7 @@ G6B=conformingFirstOfferBeforeExpiry
 K5=ackedIsHeldOrSettled
 K6=conformingEveryOfferBeforeExpiry
 G8=admissionMatchesCadence
-G6C=conformingFirstOfferMinedBeforeExpiry
+G6C=conformingMinedBeforeExpiry
 
 # The schedule guarantee with every component honest: under a timely tip, and
 # under a tip that may be reported behind the chain.
@@ -389,7 +389,7 @@ job tlc_violated initStaleLag           step $G6B 13                    # K4
 job tlc_violated initStaleLag           step $K6 13                     # K6
 job tlc_violated initStaleLagWithSlack  step $G6B 19                    # finding 2's spent epoch, not fixed by #85
 job tlc_violated initFlakyStaleLagWithSlack step $G6B 15                # K11
-job tlc_violated initFlakyTip           step $G6C 18                    # K12
+job tlc_violated initFlakyTip           step $G6C 17                    # K12
 # K5, three causes: a crash; without one, a final flush nothing judged; with
 # no shutdown either, a requeue that gives the entry up as expired.
 job tlc_violated initTimely             step $K5 5
@@ -431,7 +431,7 @@ job tlc_violated initFlakyTipBudget     step "not(wRestartedOwing)" 6
 job tlc_violated initFlakyTipBudget     step "not(wBlockInFlight)" 9
 job tlc_violated initFlakyTipBudget     step "not(wStopped)" 8
 job tlc_violated initFlakyTipBudget     step "not(wLaggedRelay)" 12      # the tip catch-up after a relay
-job tlc_violated initFlakyTipBudget     step "not(wDeferred)" 18      # one promised payload mined, another waiting
+job tlc_violated initFlakyTipBudget     step "not(wDeferred)" 18      # one supported tx mined, another waiting
 finish
 fi
 

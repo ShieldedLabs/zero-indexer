@@ -38,7 +38,10 @@ module hubMachine {
   /// - `maxFlightBlocks`: blocks that may arrive while one flush is in flight.
   /// - `maxHeight`: where the chain stops growing; a bound of the model.
   /// - `tip`: how the hub's view of the tip relates to the true height.
-  /// - `blockActions`: the shielded cost one block holds.
+  /// - `blockActions`: the shielded cost one block holds. `None` is a block
+  ///   with room for every transaction, and nothing records what it mines:
+  ///   the chain as before block capacity, for configurations that check no
+  ///   property of mining.
   /// - `maxCompeting`: the most shielded cost other traffic takes in a block.
   type HubConfig = {
     payloads: Set[Payload],
@@ -48,7 +51,7 @@ module hubMachine {
     maxHeight: Height,
     tip: TipModel,
     indexerRole: Role,
-    blockActions: int,
+    blockActions: Option[int],
     maxCompeting: int,
   }
 
@@ -112,7 +115,10 @@ module hubMachine {
         and {
           c.params.miningMargin - c.maxFlightBlocks >= 1,
           c.params.flushInterval >= c.params.reorgAllowance + c.params.miningMargin,
-          budget <= c.blockActions - c.maxCompeting,
+          match c.blockActions {
+            | Some(capacity) => budget <= capacity - c.maxCompeting
+            | None => true
+          },
           c.payloads.forall(payload => payload.actions <= budget),
         }
       | None => true
@@ -176,9 +182,6 @@ module hubMachine {
   var offered: Set[Payload]
   /// The payloads acknowledged as accepted that no node has judged since.
   var owed: Set[Payload]
-  /// The payloads a node took on a supported wallet's first, on-time offer,
-  /// with an expiry. Kept when the hub goes down: the chain still has them.
-  var promised: Set[Payload]
 
   action initWith(c: HubConfig): bool = all {
     cfg' = c,
@@ -192,7 +195,6 @@ module hubMachine {
     onTime' = Set(),
     offered' = Set(),
     owed' = Set(),
-    promised' = Set(),
   }
 
   // ------------------------------------------------------------------------
@@ -301,9 +303,9 @@ module hubMachine {
   action chainKept = all { height' = height, onChain' = onChain, mined' = mined, polled' = polled }
   action admissionsKept = all { seen' = seen, onTime' = onTime }
   /// The hub went down. `owed` is kept: an acknowledged payload lost with the
-  /// process is K5. So is `promised`, a fact about the chain.
-  action runForgotten = all { seen' = Set(), onTime' = Set(), offered' = Set(), promised' = promised }
-  action memoryKept = all { admissionsKept, offered' = offered, owed' = owed, promised' = promised }
+  /// process is K5.
+  action runForgotten = all { seen' = Set(), onTime' = Set(), offered' = Set() }
+  action memoryKept = all { admissionsKept, offered' = offered, owed' = owed }
 
   /// The hub takes `input` on its own schedule. A step that would change
   /// nothing is not taken.
@@ -381,7 +383,6 @@ module hubMachine {
         else onTime,
       owed' = if (isAcceptedAck(result.out)) owed.union(Set(payload)) else owed,
       offered' = offered,
-      promised' = promised,
       flightStart' = flightStart,
       chainKept,
       cfg' = cfg,
@@ -405,24 +406,16 @@ module hubMachine {
       hubTakes(FlushDueHInput),
       flightStart' = if (result.state.flush == Idle) 0 else height,
       if (result.state.phase == Stopped) runForgotten
-      else all { admissionsKept, offered' = offered, promised' = promised },
+      else all { admissionsKept, offered' = offered },
       owed' = owed,
       chainKept,
     }
 
   /// The indexer returns `given` on one entry of the batch, and the network
   /// has taken the transaction or has not. A verdict other than `Retryable`
-  /// is a node's judgement: it settles the entry. A node that takes a
-  /// supported wallet's first, on-time offer makes it a promise G6c holds
-  /// the chain to.
+  /// is a node's judgement: it settles the entry.
   action verdictWith(payload: Payload, given: Verdict, relayed: bool): bool =
     val judged = given != Retryable
-    val promises = and {
-      relayed,
-      isConformingAndOnTime(payload),
-      isFirstOffer(payload),
-      isSome(payload.expiry),
-    }
     all {
       awaiting.contains(payload),
       verdictsOn(payload).contains((given, relayed)),
@@ -430,7 +423,6 @@ module hubMachine {
       onChain' = if (relayed) onChain.union(Set(payload)) else onChain,
       offered' = if (judged) offered.union(Set(payload)) else offered,
       owed' = if (judged) owed.exclude(Set(payload)) else owed,
-      promised' = if (promises) promised.union(Set(payload)) else promised,
       height' = height,
       mined' = mined,
       polled' = polled,
@@ -456,7 +448,7 @@ module hubMachine {
       flightStart' = 0,
       owed' = owed,
       if (result.state.phase == Stopped) runForgotten
-      else all { admissionsKept, offered' = offered.union(h.inFlight()), promised' = promised },
+      else all { admissionsKept, offered' = offered.union(h.inFlight()) },
       chainKept,
     }
 
@@ -539,7 +531,10 @@ module hubMachine {
 
   /// Whether `block`, beside `competing` of other traffic, fits a block.
   def fitsBlock(block: Set[Payload], competing: int): bool =
-    actionsOf(block) + competing <= cfg.blockActions
+    match cfg.blockActions {
+      | Some(capacity) => actionsOf(block) + competing <= capacity
+      | None => true
+    }
 
   /// The blocks an honest miner may build beside `competing` of other
   /// traffic. It fills the block: every mineable payload left out would
@@ -559,7 +554,7 @@ module hubMachine {
     height' = height + 1,
     polled' = false,
     onChain' = onChain,
-    mined' = mined.union(block),
+    mined' = if (isSome(cfg.blockActions)) mined.union(block) else mined,
     h' = h,
     flightStart' = flightStart,
     memoryKept,
@@ -650,13 +645,14 @@ module hubMachine {
       | None => true
     }
 
-  /// G6c. A supported wallet's transaction that a node took on its first,
-  /// on-time offer is mined before it expires. A transaction with expiry E
-  /// is valid up to block E, so in a state at height E an unmined one is
-  /// lost. Stronger than G6b: mined, where G6b says offered with the margin.
-  val conformingFirstOfferMinedBeforeExpiry =
-    promised.forall(payload =>
-      mined.contains(payload) or
+  /// G6c. A supported wallet's transaction that a node took is mined before
+  /// it expires. A transaction with expiry E is valid up to block E, so in a
+  /// state at height E an unmined one is lost. Stronger than G6b: mined,
+  /// where G6b says offered with the margin. It covers every offer, and the
+  /// hub's admission and requeue checks keep a late one out.
+  val conformingMinedBeforeExpiry =
+    onChain.forall(payload =>
+      not(conforming(payload, cfg.params.minWalletExpiry)) or mined.contains(payload) or
         match payload.expiry {
           | Some(expiry) => height < expiry
           | None => true
@@ -737,9 +733,12 @@ module hubMachine {
         | Some(expiry) => height >= expiry
         | None => false
       })
-  /// One promised payload is in a block and another waits in the mempool.
+  /// One supported wallet's transaction is in a block and another waits in
+  /// the mempool.
   /// Under the budget, G6c says the waiting one is still before its expiry.
-  val wDeferred = promised.intersect(mined) != Set() and promised.exclude(mined) != Set()
+  val wDeferred =
+    val supported = onChain.filter(payload => conforming(payload, cfg.params.minWalletExpiry))
+    supported.intersect(mined) != Set() and supported.exclude(mined) != Set()
   /// The hub is idle after a relay that ended with its tip as far behind as
   /// the holdoff allows for: the reorg allowance plus a flight's blocks.
   val wLaggedRelay = and {
@@ -801,7 +800,7 @@ module hubMachine {
     maxHeight: 12,
     tip: TipTimely,
     indexerRole: Honest,
-    blockActions: 3,
+    blockActions: Some(3),
     maxCompeting: 0,
   }
 
@@ -811,6 +810,7 @@ module hubMachine {
   pure val flakyTip: HubConfig = { ...timely, tip: TipMayRegress }
   pure val flakyTipNoSlack: HubConfig = {
     ...flakyTip,
+    blockActions: None,
     params: { ...flakyTip.params, minWalletExpiry: 6 },
     payloads: Set(orchard("early", 2, 8, 2), late),
   }
@@ -818,7 +818,7 @@ module hubMachine {
   // A hub that may go without a tip for a while: on the shipped relation
   // between the staleness window and the expiry floor, and on the relation
   // that would cover the silence.
-  pure val staleLag: HubConfig = { ...timely, tip: TipMayLag }
+  pure val staleLag: HubConfig = { ...timely, tip: TipMayLag, blockActions: None }
   pure val staleLagWithSlack: HubConfig = {
     ...staleLag,
     params: { ...staleLag.params, minWalletExpiry: 8 },
@@ -831,14 +831,14 @@ module hubMachine {
 
   // A Byzantine indexer, on the schedule of `timely`, with one supported
   // migration and `tight`.
-  pure val byzIndexer: HubConfig = { ...timely, indexerRole: Byzantine, payloads: Set(early, tight) }
+  pure val byzIndexer: HubConfig = { ...timely, indexerRole: Byzantine, payloads: Set(early, tight), blockActions: None }
 
   /// Bytes neither the shim nor the hub can parse: no txid, no expiry. After
   /// a network upgrade a build does not know, every transaction looks like
   /// this to it.
   pure val junk: Payload =
     { id: "junk", txid: None, created: 1, expiry: None, class: Unparseable, spends: Set(), oversize: false, actions: 0 }
-  pure val unknownUpgrade: HubConfig = { ...timely, payloads: Set(early, tight, junk) }
+  pure val unknownUpgrade: HubConfig = { ...timely, payloads: Set(early, tight, junk), blockActions: None }
 
   /// The candidate fix of #121 on `flakyTip`: a per-flush budget of 2, which
   /// holds `early` or `late`, one at a time, and a holdoff after each relay.

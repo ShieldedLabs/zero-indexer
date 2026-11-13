@@ -143,7 +143,7 @@ The deployment targets the server-side and network-metadata adversaries of Taylo
 | G10 | `oneAnswerPerLookup` | The wallet gets at most one answer per lookup the shim sent. G4 reads its window from the shim's waiters, so a second answer is invisible to it |  | Simulation |
 | G9 | `forwardedSpendsNoDiverted` | No transaction the shim forwards to the operator's indexer spends an output of one the shim diverted, in either order and before or after publication. Holds while every such spend has transparent parts only; a spend with a shielded bundle is K10 | T19 | Simulation; `texSecondLegIsDivertedTest` |
 | G6b | `conformingFirstOfferBeforeExpiry` | A supported wallet's transaction is offered with the mining margin to spare, the first time a hub offers it. About the margin left when the flush begins, not about acceptance; nothing about a later offer of a requeued entry | T5 | TLC, exhaustive |
-| G6c | `conformingFirstOfferMinedBeforeExpiry` | A supported wallet's transaction that a node took on its first, on-time offer is mined before it expires. Stronger than G6b: mined, where G6b says offered with the margin | T5 | TLC, exhaustive |
+| G6c | `conformingMinedBeforeExpiry` | A supported wallet's transaction that a node took is mined before it expires. Stronger than G6b: mined, where G6b says offered with the margin | T5 | TLC, exhaustive |
 | G8 | `admissionMatchesCadence` | Every entry admitted, and not requeued, survives the first flush the cadence has not spent, with the mining margin to spare against the cadence boundary. G6b is the margin at the chain height | T5 | TLC, exhaustive |
 | G7 | `wellFormedTest` | Structural sanity of the hub: a queued entry is within its attempts, a down hub holds nothing and knows nothing, and a stopped hub holds nothing | T6 | Exhaustive test over every reachable hub state |
 | A2 | `neverEvictTest` | An entry leaves the hub's queue only into a flush, because a node judged an entry with its txid and the hub burned that txid, or because the hub went down or exited after its final flush | T6 | Exhaustive test over every reachable hub state and input |
@@ -259,7 +259,7 @@ sh zeronym/spec/quint/check.sh
 | 3b | `quint run`, witnesses | every listed state is reached at least once; no invariant is violated on the way |
 | 4 | `tlc.sh`, one row per invariant and configuration | "holds" rows hold over every reachable state; "violated" rows are violated by a counterexample no longer than the recorded one |
 
-Quint 0.33.0 is pinned (`npx --yes @informalsystems/quint@0.33.0` by default; set `QUINT=quint` to use an installed one). Tier 4 needs Java and Apalache 0.62.1, whose jar carries TLC; without either the tier fails, it never skips. `CHECK_TIERS=simulation` runs tiers 1 to 3b and `CHECK_TIERS=tlc` tiers 1 and 4; CI runs them as two jobs. All four tiers take about 12 minutes on a 16-core machine. It has not been timed on a CI runner.
+Quint 0.33.0 is pinned (`npx --yes @informalsystems/quint@0.33.0` by default; set `QUINT=quint` to use an installed one). Tier 4 needs Java and Apalache 0.62.1, whose jar carries TLC; without either the tier fails, it never skips. `CHECK_TIERS=simulation` runs tiers 1 to 3b and `CHECK_TIERS=tlc` tiers 1 and 4; CI runs them as two jobs. All four tiers take about 10 minutes on a 16-core machine. It has not been timed on a CI runner.
 
 ### Configurations
 
@@ -278,7 +278,7 @@ At most 3 sends and 3 lookups by the wallet, 3 requests by the observer. The `ba
 
 #### Hub specification
 
-The schedule flushes every 3 blocks with a mining margin of 2, a delivery lag of 1, a reorg allowance of 1, a staleness window of 3 and an expiry floor of 7. It is the shipped schedule scaled down (interval 20, margin 4, lag 6, reorg allowance 10, staleness window 12 blocks, expiry floor 40), keeping the relations between the constants that the findings turn on. A block holds 3 units of shielded cost (shipped: 330), and other traffic takes 0 of them, or up to 1 in `flakyTipBudget`. Each migration costs 2, so the one block left after a flight takes one of `early` and `late`. `flakyTipBudget` sets a per-flush budget of 2.
+The schedule flushes every 3 blocks with a mining margin of 2, a delivery lag of 1, a reorg allowance of 1, a staleness window of 3 and an expiry floor of 7. It is the shipped schedule scaled down (interval 20, margin 4, lag 6, reorg allowance 10, staleness window 12 blocks, expiry floor 40), keeping the relations between the constants that the findings turn on. In `timely`, `flakyTip` and `flakyTipBudget` a block holds 3 units of shielded cost (shipped: 330); the other configurations set no block capacity and record nothing as mined. Other traffic takes 0 of a block's 3, or up to 1 in `flakyTipBudget`. Each migration costs 2, so the one block left after a flight takes one of `early` and `late`. `flakyTipBudget` sets a per-flush budget of 2.
 
 | Configuration | Differs from `timely` by | For |
 |---|---|---|
@@ -301,13 +301,13 @@ With 8 workers, on the machine this was written on:
 
 | Configuration | Invariant | Verdict |
 |---|---|---|
-| `timely` | G6b | holds, 50 346 states, depth 45 |
-| `timely` | K6's predicate | holds, 50 346 states, depth 46 |
-| `flakyTip` | G6b | holds, 320 847 states, depth 46 |
-| `timely`; `flakyTip`; `staleLagWithSlack` | G8 | holds: 50 346; 320 847; 1 783 080 states |
-| `timely` | G6c | holds, 50 346 states, depth 45 |
-| `flakyTip` | G6c (K12) | violated, 18 states |
-| `flakyTipBudget` | G6c; `withinBudget`; G6b; G8 | holds, 152 797 states, depth 44 |
+| `timely` | G6b | holds, 28 851 states, depth 40 |
+| `timely` | K6's predicate | holds, 28 851 states, depth 40 |
+| `flakyTip` | G6b | holds, 154 177 states, depth 37 |
+| `timely`; `flakyTip`; `staleLagWithSlack` | G8 | holds: 28 851; 154 177; 895 083 states |
+| `timely` | G6c | holds, 28 851 states, depth 40 |
+| `flakyTip` | G6c (K12) | violated, 17 states |
+| `flakyTipBudget` | G6c; `withinBudget`; G6b; G8 | holds, 111 586 states, depth 44 |
 | `flakyTipNoSlack` | G6b (K3') | violated, 12 states |
 | `staleLag` | G6b; K6 | violated, 13; 13 states |
 | `staleLagWithSlack` | G6b (finding 2) | violated, 19 states |
@@ -315,7 +315,7 @@ With 8 workers, on the machine this was written on:
 | `timely` | K5 | violated: 5 states; 8 without a crash; 12 without a shutdown either |
 | `byzIndexer` | G6b | violated, 16 states |
 
-Block capacity added the mined set, the promised set and the miner's choice of block. The old configurations grew about 2 to 2.7 times. Every old verdict and counterexample length stayed the same. The gate took about 12 minutes on a 16-core machine with 6 rows at once.
+Block capacity added the mined set and the miner's choice of block. `timely` and `flakyTip` model it and grew about 1.3 times. The other configurations set no block capacity and keep their state counts. Every old verdict and counterexample length stayed the same. The gate took about 10 minutes on a 16-core machine with 6 rows at once.
 
 `flakyTip` had 81 518 states before the tip rule followed #92. The hub's best height is now part of its state, so a tip one below the best and the same tip as the best are distinct states. Every verdict and counterexample length stayed the same.
 
