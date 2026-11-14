@@ -1,16 +1,15 @@
 #!/bin/sh
 # Assemble the zero-indexer-shim build context: a partial mirror of the zero
-# repo containing the shim plus exactly the parts of zebra/ and zaino/ its path
-# dependencies need. Sibling of
-# deploy/caution-zaino/combined/assemble-combined.sh.
+# repo containing the shim plus the vendor/ crates its [patch] sections name.
+# zebra-chain and zaino-proto come from crates.io, pinned by the committed
+# Cargo.lock. Sibling of deploy/caution-zaino/combined/assemble-combined.sh.
 #
 # Everything comes out of `git archive HEAD`, never the working tree. Three
 # reasons, all of them load-bearing:
 #   1. Provenance: the context is exactly the recorded SHA, so "rebuild from
 #      source" has an unambiguous meaning. That includes the Containerfile,
 #      which IS the build; see the recipe-provenance block near the bottom.
-#   2. The vendored subtrees CANNOT be dirtied, because the working copy is
-#      never touched. Vendored trees are read-only for us.
+#   2. The working copy stays untouched, so a build leaves the checkout clean.
 #   3. Determinism: git archive stamps every entry with the commit timestamp,
 #      so file mtimes in the context are identical on every machine.
 #
@@ -56,57 +55,17 @@ STAGE=$(mktemp -d)
 # shellcheck disable=SC2064
 trap "rm -rf '$STAGE'" EXIT INT TERM
 
-# The crate. Its manifest path-depends on ../../zebra/zebra-chain and
-# ../../zaino/packages/zaino-proto, so the context keeps the repo's own layout
-# and the Containerfile reconstructs it under /usr/src/app. No manifest is
-# edited, here or in the image.
+# The crate. Its manifest names ../vendor/* in its [patch] sections, so the
+# context keeps shim/ and vendor/ as siblings at its root and the Containerfile
+# reconstructs them under /usr/src/app. No manifest is edited, here or in the
+# image. The archive takes the paths under zeronym/ from the commit HEAD, so
+# every entry carries the committer time, and --strip-components=1 drops the
+# zeronym/ level on extraction.
 #
 # This also carries deploy/ itself, which is how the build gets a commit-pinned
 # copy of its own Containerfile.
 git -C "$ZERO_ROOT" archive HEAD -o "$STAGE/shim.tar" zeronym/shim
-tar -xpf "$STAGE/shim.tar" -C "$DEST"
-
-# zebra: the workspace root manifest plus two member directories. Not the tree.
-#
-#   Cargo.toml   REQUIRED. zebra-chain inherits roughly fifty dependency entries
-#                plus authors/license/edition/rust-version and [lints] from
-#                [workspace.*]. Without it: "failed to parse manifest at
-#                .../zebra-chain/Cargo.toml".
-#   zebra-chain  the actual dependency, the vendored Zcash parser.
-#   zebra-test   REQUIRED, AND NEVER COMPILED. It is an optional dependency of
-#                zebra-chain (proptest-impl / bench) that only appears under
-#                dev-dependencies, but cargo must still load its manifest to
-#                resolve the graph. Dropping it fails at RESOLUTION, not at
-#                compile time: "failed to get `zebra-test` as a dependency of
-#                package `zebra-chain`". It costs context bytes and zero build
-#                time. Do not optimise it away.
-#
-# The other ten members listed in zebra/Cargo.toml are not needed: cargo only
-# reads the workspace root for inheritance here, and does not require absent
-# members to exist. Verified empirically with `cargo metadata --locked`, not
-# assumed.
-#
-# Keep this list in sync with the `paths:` filter of
-# .github/workflows/zeronym-shim-reproduce.yml. A subtree pull that touches one
-# of these directories changes the binary and therefore the recorded hash, so
-# the reproduce job has to fire on it.
-git -C "$ZERO_ROOT" archive HEAD -o "$STAGE/zebra.tar" \
-	zebra/Cargo.toml \
-	zebra/zebra-chain \
-	zebra/zebra-test
-tar -xpf "$STAGE/zebra.tar" -C "$DEST"
-
-# zaino: same shape. zaino-proto inherits authors/repository/homepage/edition/
-# license and its tonic and prost versions from [workspace.*], so the root
-# manifest is required; the other eight members are not.
-#
-# zaino-proto/proto/{compact_formats,service}.proto are git-tracked SYMLINKS
-# into ../lightwallet-protocol/walletrpc/. git archive reproduces both the links
-# and their targets, so copying the crate directory is sufficient.
-git -C "$ZERO_ROOT" archive HEAD -o "$STAGE/zaino.tar" \
-	zaino/Cargo.toml \
-	zaino/packages/zaino-proto
-tar -xpf "$STAGE/zaino.tar" -C "$DEST"
+tar -xpf "$STAGE/shim.tar" --strip-components=1 -C "$DEST"
 
 # The crypto-common [patch] target. shim/Cargo.toml unconditionally patches
 # nym's nym-upgrade-mode-check to this vendored slim copy (see its Cargo.toml),
@@ -119,20 +78,10 @@ git -C "$ZERO_ROOT" archive HEAD -o "$STAGE/vendor.tar" \
 	zeronym/vendor/nym-upgrade-mode-check \
 	zeronym/vendor/webpki-roots-0.24.0 \
 	zeronym/vendor/webpki-roots-0.25.4
-tar -xpf "$STAGE/vendor.tar" -C "$DEST"
+tar -xpf "$STAGE/vendor.tar" --strip-components=1 -C "$DEST"
 
-# Deliberately NOT in the context: orchard/. zebra/Cargo.toml carries a [zero]
-# patch `orchard = { path = "../orchard" }`, but that patch belongs to zebra's
-# workspace and does not apply to the shim's own. The shim resolves orchard
-# 0.15.4 from crates.io per its committed Cargo.lock, and cargo does not
-# complain about the dangling patch path when it merely loads zebra's manifest
-# for inheritance. (Whether the shim's parser and the node's parser SHOULD be
-# built from the same orchard is a separate open design question; it does not
-# affect reproducibility, which the lockfile pins either way.)
-#
-# Also not needed: zebra/Cargo.lock, zaino/Cargo.lock, and either tree's
-# rust-toolchain.toml. The shim's own lockfile is authoritative, and the pinned
-# pallet-rust digest is the toolchain.
+# Also not needed: a rust-toolchain.toml. The shim's own lockfile is
+# authoritative, and the pinned pallet-rust digest is the toolchain.
 
 ############################################################
 # Recipe provenance
@@ -140,11 +89,11 @@ tar -xpf "$STAGE/vendor.tar" -C "$DEST"
 # The Containerfile is the entire definition of the build, so it is the one file
 # in the context most worth tampering with, and therefore the one that must come
 # from HEAD rather than from the working tree. It arrives via the `git archive
-# HEAD zeronym/shim` above, at $DEST/zeronym/shim/deploy/Containerfile, and
+# HEAD zeronym/shim` above, at $DEST/shim/deploy/Containerfile, and
 # every caller builds with `-f` pointed at THAT path. There is deliberately no
 # copy at the context root: a second, working-tree-sourced copy is exactly the
 # hole this closes.
-RECIPE="$DEST/zeronym/shim/deploy/Containerfile"
+RECIPE="$DEST/shim/deploy/Containerfile"
 
 if [ -f "$RECIPE" ]; then
 	# Committed. Warn if the working tree has drifted, because the build will
@@ -168,7 +117,7 @@ else
 	echo "# Commit zeronym/shim/deploy/ before publishing any hash."
 	echo "############################################################"
 	echo
-	mkdir -p "$DEST/zeronym/shim/deploy"
+	mkdir -p "$DEST/shim/deploy"
 	cp "$HERE/Containerfile" "$RECIPE"
 	# Mirror the rest of deploy/ too, so the context has the same shape it will
 	# have once committed. None of it is compiled (cargo builds src/ and the
@@ -177,7 +126,7 @@ else
 	# with and without deploy/ present in the context produce the same binary.
 	for f in "$HERE"/*; do
 		[ -f "$f" ] || continue
-		cp "$f" "$DEST/zeronym/shim/deploy/"
+		cp "$f" "$DEST/shim/deploy/"
 	done
 fi
 

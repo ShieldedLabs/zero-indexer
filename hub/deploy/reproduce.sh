@@ -42,7 +42,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 
 # The recipe from inside the context (git archive HEAD), not the working tree.
-RECIPE="$CTX/zeronym/hub/deploy/Containerfile"
+RECIPE="$CTX/hub/deploy/Containerfile"
 
 for n in 1 2; do
 	echo "==> cold build $n of 2"
@@ -87,22 +87,6 @@ else
 	echo "      expected $EXPECTED"
 	echo "      If the recipe or its inputs changed on purpose, re-baseline"
 	echo "      deploy/EXPECTED_SHA256 and deploy/README.md together."
-	fail=1
-fi
-
-echo
-echo "=== vendored subtrees must be untouched ==="
-# zaino/ is checked as well as zebra/, and not merely for symmetry:
-# zaino-proto's build.rs regenerates its committed src/proto/*.rs whenever protoc
-# is reachable, writing INTO the vendored subtree. The recipe's defence is an
-# image with no protoc in it at all, and this is the assertion that the defence
-# is still holding.
-dirty=$(git -C "$ZERO_ROOT" status --porcelain zebra/ zaino/)
-if [ -z "$dirty" ]; then
-	echo "zebra/ and zaino/ clean"
-else
-	echo "DIRTY, this is a build failure, not a nuisance:"
-	echo "$dirty"
 	fail=1
 fi
 

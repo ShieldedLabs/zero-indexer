@@ -22,9 +22,7 @@ set -e
 
 ZERO_ROOT="$(git rev-parse --show-toplevel)"
 CTX="${CTX:-$(mktemp -d)/zero-indexer-hub-ctx}"
-# Outside the repo on purpose: part of the audit ritual is checking that a build
-# left the tree clean (`git status --porcelain zebra/`), and artifacts dropped
-# inside the checkout make that check noisier than it needs to be.
+# Outside the repo on purpose, so the build leaves the checkout clean.
 OUT="${OUT:-$(dirname "$ZERO_ROOT")/zero-indexer-hub-build}"
 
 export DOCKER_BUILDKIT=1
@@ -37,7 +35,7 @@ mkdir -p "$OUT"
 # Not the working-tree copy: the Containerfile is the whole definition of the
 # build, so building the working-tree copy would mean an auditor at the recorded
 # commit could unknowingly build a different recipe.
-RECIPE="$CTX/zeronym/hub/deploy/Containerfile"
+RECIPE="$CTX/hub/deploy/Containerfile"
 
 echo "Extracting the binary from the export stage..."
 docker build -f "$RECIPE" "$CTX" \

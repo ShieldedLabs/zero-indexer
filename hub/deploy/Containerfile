@@ -34,19 +34,15 @@
 # proves only that SOME enclave is running, which collapses the design back into
 # trusting whoever compiled it.
 #
-# Build context = a partial mirror of the zero repo (assemble via assemble.sh):
-#   zeronym/hub/                  the crate, including this file under deploy/
-#   zebra/Cargo.toml              workspace root zebra-chain inherits from
-#   zebra/zebra-chain/            the vendored Zcash parser (the path dep)
-#   zebra/zebra-test/             optional dep of zebra-chain, manifest only
-#   zeronym/vendor/               the [patch] targets (see assemble.sh)
-# The layout is the repo's own, so the hub's `../../zebra/zebra-chain` path dep
-# resolves unchanged. No manifest is edited, anywhere. Unlike the shim, the hub
-# has NO zaino-proto dependency (it speaks JSON-RPC to full nodes, not the
-# CompactTxStreamer gRPC), so zaino/ is deliberately absent from the context.
+# Build context = the hub crate and its [patch] targets (assemble via assemble.sh):
+#   hub/                          the crate, including this file under deploy/
+#   vendor/                       the [patch] targets (see assemble.sh)
+# hub/ and vendor/ are siblings, so the hub's `../vendor/*` path references
+# resolve unchanged. No manifest is edited, anywhere. zebra-chain and
+# zaino-proto come from crates.io, pinned by the committed Cargo.lock.
 #
 # BUILD THIS FILE FROM INSIDE THE CONTEXT, not from the working tree:
-#   docker build -f "$CTX/zeronym/hub/deploy/Containerfile" "$CTX" ...
+#   docker build -f "$CTX/hub/deploy/Containerfile" "$CTX" ...
 # assemble.sh puts a `git archive HEAD` copy there precisely so that the recipe,
 # which IS the definition of the build, is pinned to the same commit as the
 # sources it compiles.
@@ -109,13 +105,10 @@ ENV SOURCE_DATE_EPOCH=1
 # reimplementation. It links clean without them. If a future dependency breaks
 # the link, restore the reference's flags before debugging anything else.
 
-# Repo-shaped context. Three COPYs so the layer cache is invalidated by the piece
-# that actually changed.
-COPY zebra/ ./zebra/
-COPY zaino/ ./zaino/
-COPY zeronym/ ./zeronym/
+# The context root holds hub/ and vendor/.
+COPY . ./
 
-WORKDIR /usr/src/app/zeronym/hub
+WORKDIR /usr/src/app/hub
 
 # Two phases so the network is only open for the fetch. --locked here and
 # --frozen below make the committed Cargo.lock authoritative: any drift is a

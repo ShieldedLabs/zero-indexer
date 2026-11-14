@@ -51,7 +51,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 
 # The recipe from inside the context (git archive HEAD), not the working tree.
-RECIPE="$CTX/zeronym/shim/deploy/Containerfile"
+RECIPE="$CTX/shim/deploy/Containerfile"
 
 for n in 1 2; do
 	echo "==> cold build $n of 2"
@@ -96,17 +96,6 @@ else
 	echo "      expected $EXPECTED"
 	echo "      If the recipe or its inputs changed on purpose, re-baseline"
 	echo "      deploy/EXPECTED_SHA256 and deploy/README.md together."
-	fail=1
-fi
-
-echo
-echo "=== vendored subtrees must be untouched ==="
-dirty=$(git -C "$ZERO_ROOT" status --porcelain zebra/ zaino/)
-if [ -z "$dirty" ]; then
-	echo "zebra/ and zaino/ clean"
-else
-	echo "DIRTY, this is a build failure, not a nuisance:"
-	echo "$dirty"
 	fail=1
 fi
 

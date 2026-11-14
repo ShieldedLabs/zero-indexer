@@ -519,8 +519,8 @@ if [ -d "$DEST/.caution" ] || [ -d "$DEST/.git" ]; then
 	if [ -d "$DEST/.git" ]; then mv "$DEST/.git" "$KEEP/.git"; fi
 fi
 
-# The build context: the shim crate plus the parts of zebra/ and zaino/ its path
-# dependencies need. Identical to what the reproducibility check builds, because
+# The build context: the shim crate plus the vendor/ crates its [patch] sections
+# name. Identical to what the reproducibility check builds, because
 # it is the same script.
 sh "$ZERO_ROOT/zeronym/shim/deploy/assemble.sh" "$DEST"
 
@@ -535,7 +535,7 @@ if [ -d "$KEEP/.git" ]; then mv "$KEEP/.git" "$DEST/.git"; fi
 # working tree: the context copy came from `git archive HEAD`, so the root copy
 # inherits that provenance. Copying from $HERE/../Containerfile instead would
 # reintroduce exactly the hole assemble.sh closes, and would do it silently.
-NESTED="$DEST/zeronym/shim/deploy/Containerfile"
+NESTED="$DEST/shim/deploy/Containerfile"
 test -f "$NESTED" || { echo "error: no Containerfile in the assembled context" >&2; exit 1; }
 cp "$NESTED" "$DEST/Containerfile"
 
