@@ -30,8 +30,8 @@ module wire {
     | Lookup({ nonce: Nonce, txid: TxId })
     | LookupReply({ nonce: Nonce, reply: WireReply })
 
-  /// A hub's decision as an ack. A draining hub and a spent proof answer under
-  /// the queue-full code, as the implementation does.
+  /// A hub's decision as an ack. A draining hub, a spent proof and a full
+  /// batch answer under the queue-full code, as the implementation does.
   pure def renderAck(kind: AckKind): WireAck =
     match kind {
       | Admitted => WAccepted
@@ -42,6 +42,7 @@ module wire {
           | HubDraining => WRefused(WQueueFull)
           | ExpiryTooTight => WRefused(WExpiryTooTight)
           | SpentProof => WRefused(WQueueFull)
+          | BatchFull => WRefused(WQueueFull)
         }
     }
 

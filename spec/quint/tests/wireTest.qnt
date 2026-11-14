@@ -7,10 +7,10 @@ module wireTest {
   import types.* from "../types"
   import wire.* from "../wire"
 
-  pure val pA = { id: "a", txid: Some("ta"), created: 1, expiry: Some(9), class: OrchardTouching, spends: Set(), oversize: false }
+  pure val pA = { id: "a", txid: Some("ta"), created: 1, expiry: Some(9), class: OrchardTouching, spends: Set(), oversize: false, actions: 2 }
   pure val pATwin = { ...pA, id: "a-twin" }
-  pure val pB = { id: "b", txid: Some("tb"), created: 1, expiry: None, class: OtherShielded, spends: Set(), oversize: false }
-  pure val pJunk = { id: "junk", txid: None, created: 1, expiry: None, class: Unparseable, spends: Set(), oversize: false }
+  pure val pB = { id: "b", txid: Some("tb"), created: 1, expiry: None, class: OtherShielded, spends: Set(), oversize: false, actions: 2 }
+  pure val pJunk = { id: "junk", txid: None, created: 1, expiry: None, class: Unparseable, spends: Set(), oversize: false, actions: 0 }
 
   pure val PAYLOADS = Set(pA, pATwin, pB, pJunk)
   pure val HEIGHTS = WIRE_HEIGHTS
@@ -41,7 +41,7 @@ module wireTest {
     tuples(BODIES, HEIGHTS).map(((body, height)) => WFound({ body: body, height: height }))
       .union(Set(WNotFound, WError))
 
-  pure val REFUSALS = Set(TipStale, HubDraining, ExpiryTooTight, SpentProof)
+  pure val REFUSALS = Set(TipStale, HubDraining, ExpiryTooTight, SpentProof, BatchFull)
 
   /// Rendering an honest outcome and reading it back gives what the
   /// outcome means.
@@ -96,12 +96,13 @@ module wireTest {
   run errorIsNeverNotFoundTest =
     assert(QUERIES.forall(query => interpretReply(WError, query) == Unavailable))
 
-  /// A draining hub and a spent proof refuse under the queue-full code; a
-  /// fresh admission and a duplicate are one acceptance. Every other refusal
-  /// has its own code.
+  /// A draining hub, a spent proof and a full batch refuse under the
+  /// queue-full code; a fresh admission and a duplicate are one acceptance.
+  /// Every other refusal has its own code.
   run ackRenderingTest = all {
     assert(renderAck(Refused(HubDraining)) == WRefused(WQueueFull)),
     assert(renderAck(Refused(SpentProof)) == WRefused(WQueueFull)),
+    assert(renderAck(Refused(BatchFull)) == WRefused(WQueueFull)),
     assert(renderAck(Admitted) == WAccepted),
     assert(renderAck(Duplicate) == WAccepted),
     assert(REFUSALS.forall(refusal => renderAck(Refused(refusal)) != WAccepted)),

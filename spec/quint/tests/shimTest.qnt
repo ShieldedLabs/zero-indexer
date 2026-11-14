@@ -8,7 +8,8 @@ module shimTest {
   import shim.* from "../shim"
 
   pure def payload(id: str, class: Class): Payload =
-    { id: id, txid: Some(id), created: 1, expiry: Some(9), class: class, spends: Set(), oversize: false }
+    { id: id, txid: Some(id), created: 1, expiry: Some(9), class: class, spends: Set(), oversize: false,
+      actions: if (class == TransparentOnly or class == Unparseable) 0 else 2 }
 
   pure val pOrchard = payload("orchard", OrchardTouching)
   pure val pPlain = payload("plain", OtherShielded)

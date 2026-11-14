@@ -1,15 +1,19 @@
 #!/bin/sh
-# Check one invariant of one configuration exhaustively, with TLC.
+# Check invariants of one configuration exhaustively, with TLC.
 #
 #   tlc.sh FILE MAIN INIT STEP INVARIANT
+#   tlc.sh FILE MAIN INIT STEP NAME,NAME,...
 #   tlc.sh --fetch                      only fetch Apalache, if it is missing
 #
 # FILE is a Quint file, MAIN the module in it, INIT a named init action built
-# on `initWith`, STEP a step relation and INVARIANT a state predicate. On
+# on `initWith`, STEP a step relation and INVARIANT a state predicate. A
+# comma-separated list of predicate names is checked in one exploration, each
+# as its own TLC invariant, so a violation names the one that failed. On
 # success exactly one line is printed:
 #
 #   holds <distinct states> <depth>     every reachable state satisfies it
 #   violated <trace length>             TLC found a counterexample that long
+#   violated <trace length> <name>      the same, for a list: <name> failed
 #
 # Anything else is a failure: a line `FAIL <stage>: <reason>` on stderr, no
 # verdict line, and a non-zero exit status. Nothing skips a stage.
@@ -142,7 +146,15 @@ fi
 
 # 3. TLC. `-deadlock` switches deadlock checking off: every machine here stops
 # at its height bound.
-printf 'INIT q_init\nNEXT q_step\nINVARIANT q_inv\n' >"$main.cfg"
+# A list gives TLC one invariant per name; a single predicate, which may be an
+# expression, is checked as `q_inv`.
+case $invariant in
+  *,*)
+    printf 'INIT q_init\nNEXT q_step\n' >"$main.cfg"
+    echo "$invariant" | tr ',' '\n' | sed 's/^/INVARIANT /' >>"$main.cfg"
+    ;;
+  *) printf 'INIT q_init\nNEXT q_step\nINVARIANT q_inv\n' >"$main.cfg" ;;
+esac
 java "-Xmx$HEAP" -XX:+UseParallelGC -cp "$JAR" tlc2.TLC -deadlock -workers "$WORKERS" \
   -metadir "$work/states" -config "$main.cfg" "$main.tla" >tlc.log 2>&1 &
 tlc=$!
@@ -152,6 +164,14 @@ wait "$tlc"
 status=$?
 kill "$watchdog" 2>/dev/null
 wait "$watchdog" 2>/dev/null
+
+# The name of the invariant TLC found violated, after a space, for a list;
+# nothing for a single predicate, which TLC knows as `q_inv`.
+failed() {
+  case $invariant in
+    *,*) sed -n 's/^Error: Invariant \([A-Za-z0-9_]*\) is violated.*/ \1/p' tlc.log | head -1 ;;
+  esac
+}
 
 # Out of time. How far TLC got is reported, as its last progress line has it.
 if [ -f "$work/timed-out" ]; then
@@ -172,14 +192,14 @@ if [ "$status" -eq 0 ] \
   depth=$(sed -n 's/^The depth of the complete state graph search is \([0-9][0-9]*\).*/\1/p' tlc.log | tail -1)
   [ -n "$states" ] && [ -n "$depth" ] || { tail -15 tlc.log >&2; die "tlc: no state count or depth reported"; }
   echo "holds $states $depth"
-elif [ "$status" -eq 12 ] && grep -q "Error: Invariant q_inv is violated by the initial state" tlc.log; then
+elif [ "$status" -eq 12 ] && grep -q "Error: Invariant [A-Za-z0-9_]* is violated by the initial state" tlc.log; then
   [ -n "${TLC_TRACE:-}" ] && cp tlc.log "$TLC_TRACE"
-  echo "violated 1"
-elif [ "$status" -eq 12 ] && grep -q "Error: Invariant q_inv is violated." tlc.log; then
+  echo "violated 1$(failed)"
+elif [ "$status" -eq 12 ] && grep -q "Error: Invariant [A-Za-z0-9_]* is violated\." tlc.log; then
   length=$(grep -c '^State [0-9][0-9]*:' tlc.log)
   [ "$length" -gt 0 ] || { tail -15 tlc.log >&2; die "tlc: a violation with no trace"; }
   [ -n "${TLC_TRACE:-}" ] && cp tlc.log "$TLC_TRACE"
-  echo "violated $length"
+  echo "violated $length$(failed)"
 else
   tail -15 tlc.log >&2
   die "tlc: no verdict (exit status $status)"

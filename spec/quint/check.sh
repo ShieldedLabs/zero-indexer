@@ -33,6 +33,8 @@
 # sample counts and seeds below were settled on the Rust evaluator.
 # QUINT_JOBS is how many rows run at once. CHECK_TIERS picks what runs after
 # tier 1: `simulation` (2 to 3b), `tlc` (4) or `all`, the default.
+# CHECK_SHARD=I/N runs only every N-th row, starting at row I, so N runners
+# together run every row once. Tier 1 runs on each.
 set -u
 
 cd "$(dirname "$0")"
@@ -45,6 +47,15 @@ case $TIERS in
   all | simulation | tlc) ;;
   *) echo "CHECK_TIERS is '$TIERS', not all, simulation or tlc" >&2; exit 2 ;;
 esac
+SHARD=${CHECK_SHARD:-1/1}
+SHARD_INDEX=${SHARD%/*} SHARD_COUNT=${SHARD#*/}
+case $SHARD_INDEX$SHARD_COUNT in
+  *[!0-9]* | '') echo "CHECK_SHARD is '$SHARD', not I/N" >&2; exit 2 ;;
+esac
+if [ "$SHARD_INDEX" -lt 1 ] || [ "$SHARD_INDEX" -gt "$SHARD_COUNT" ]; then
+  echo "CHECK_SHARD is '$SHARD': I must be 1 to N" >&2
+  exit 2
+fi
 SEED=7
 failures=0
 
@@ -52,13 +63,22 @@ failures=0
 # and, once it has run to the end, its exit status to a second file; `finish`
 # prints them in the order the rows were written and counts the failures. A
 # row with no status was killed before it finished, and one with a nonzero
-# status failed; either is a failure whatever it printed.
+# status failed; either is a failure whatever it printed. Each batch of JOBS
+# rows is printed as soon as it has finished, so a run cut short shows how far
+# it got.
 results=$(mktemp -d)
 trap 'rm -rf "$results"' EXIT
 queued=0
 running=0
+sharded=0
+tier1=1
 
 job() {
+  sharded=$((sharded + 1))
+  # Tier 1 runs whole on every shard; later rows go to one shard each.
+  if [ "$tier1" = 0 ] && [ $(((sharded - 1) % SHARD_COUNT + 1)) -ne "$SHARD_INDEX" ]; then
+    return 0
+  fi
   queued=$((queued + 1))
   row_file="$results/$(printf '%04d' "$queued")"
   ( "$@"; echo $? >"$row_file.status" ) >"$row_file" 2>&1 &
@@ -66,12 +86,18 @@ job() {
   if [ "$running" -ge "$JOBS" ]; then
     wait
     running=0
+    report
   fi
 }
 
 finish() {
   wait
   running=0
+  report
+}
+
+# Prints the rows that have finished, in the order they were written.
+report() {
   for file in "$results"/[0-9][0-9][0-9][0-9]; do
     [ -f "$file" ] || continue
     cat "$file"
@@ -91,8 +117,8 @@ finish() {
 # being found (renamed so it no longer ends in `Test`, say) fails the gate.
 SPELLS="spells/basicSpells.qnt:6 spells/soup.qnt:4"
 MODULES="types.qnt wire.qnt indexer.qnt hub.qnt abstractHub.qnt hubMachine.qnt shim.qnt protocol.qnt"
-FUNCTIONAL="tests/wireTest.qnt:11 tests/indexerTest.qnt:14 tests/hubTest.qnt:26 tests/shimTest.qnt:14
-  tests/hubScenariosTest.qnt:25 tests/scenariosTest.qnt:22 tests/trustTest.qnt:14"
+FUNCTIONAL="tests/wireTest.qnt:11 tests/indexerTest.qnt:14 tests/hubTest.qnt:28 tests/shimTest.qnt:14
+  tests/hubScenariosTest.qnt:27 tests/scenariosTest.qnt:22 tests/trustTest.qnt:14"
 
 fail() {
   echo "FAIL  $1"
@@ -227,16 +253,17 @@ reaches() {
   done
 }
 
-# tlc_holds INIT STEP INVARIANT: TLC exhausts the configuration and finds
-# every reachable state satisfies the invariant.
+# tlc_holds INIT STEP INVARIANTS: TLC exhausts the configuration and finds
+# every reachable state satisfies each invariant of the comma-separated list.
 tlc_holds() {
   out=$(QUINT=$QUINT sh ./tlc.sh hubMachine.qnt hubMachine "$1" "$2" "$3" 2>&1)
+  names=$(echo "$3" | sed 's/,/, /g')
   case $out in
-    "holds "*) echo "ok    $1: holds, exhaustively: $3 ($2; states and depth: ${out#holds })" ;;
-    "violated "*) fail "$1: $3 expected to hold under $2, TLC found a counterexample of ${out#violated } states" ;;
+    "holds "*) echo "ok    $1: holds, exhaustively: $names ($2; states and depth: ${out#holds })" ;;
+    "violated "*) fail "$1: $names expected to hold under $2, TLC found a counterexample (length, then the invariant): ${out#violated }" ;;
     *)
       echo "$out" | tail -20
-      fail "$1: $3: tlc.sh gave no verdict"
+      fail "$1: $names: tlc.sh gave no verdict"
       ;;
   esac
 }
@@ -297,6 +324,7 @@ finish
 if [ "$failures" -ne 0 ]; then
   exit "$failures"
 fi
+tier1=0
 
 if [ "$TIERS" != tlc ]; then
 echo "---- 2 tests"
@@ -363,15 +391,18 @@ G6B=conformingFirstOfferBeforeExpiry
 K5=ackedIsHeldOrSettled
 K6=conformingEveryOfferBeforeExpiry
 G8=admissionMatchesCadence
+G6C=conformingMinedBeforeExpiry
 
 # The schedule guarantee with every component honest: under a timely tip, and
 # under a tip that may be reported behind the chain.
-job tlc_holds    initTimely             step $G6B
-job tlc_holds    initTimely             step $K6
-job tlc_holds    initFlakyTip           step $G6B
-job tlc_holds    initTimely             step $G8
-job tlc_holds    initFlakyTip           step $G8                        # finding 6, fixed by #85
-job tlc_holds    initStaleLagWithSlack  step $G8                        # finding 2's admission half, fixed by #85
+# G8 on flakyTip is finding 6, and on staleLagWithSlack finding 2's admission
+# half, both fixed by #85. G6c is block capacity, and flakyTipBudget the
+# candidate fix of #121 under a tip that may be reported behind the chain. The
+# properties of one configuration share one exploration.
+job tlc_holds    initTimely             step $G6B,$K6,$G8,$G6C
+job tlc_holds    initFlakyTip           step $G6B,$G8
+job tlc_holds    initStaleLagWithSlack  step $G8
+job tlc_holds    initFlakyTipBudget     step $G6C,withinBudget,$G6B,$G8
 
 # The known gaps, each on the configuration that isolates its cause. The last
 # argument is the length of TLC's counterexample.
@@ -380,6 +411,7 @@ job tlc_violated initStaleLag           step $G6B 13                    # K4
 job tlc_violated initStaleLag           step $K6 13                     # K6
 job tlc_violated initStaleLagWithSlack  step $G6B 19                    # finding 2's spent epoch, not fixed by #85
 job tlc_violated initFlakyStaleLagWithSlack step $G6B 15                # K11
+job tlc_violated initFlakyTip           step $G6C 17                    # K12
 # K5, three causes: a crash; without one, a final flush nothing judged; with
 # no shutdown either, a requeue that gives the entry up as expired.
 job tlc_violated initTimely             step $K5 5
@@ -412,6 +444,16 @@ job tlc_violated initStaleLag           step "not(wStale)" 6
 job tlc_violated initStaleLagWithSlack  step "not(wStale)" 6
 job tlc_violated initFlakyTip           step "not(wAdmittedAheadOfTip)" 6
 job tlc_violated initStaleLagWithSlack  step "not(wAdmittedAheadOfTip)" 9
+job tlc_violated initTimely             step "not(wMined)" 8
+job tlc_violated initFlakyTip           step "not(wHeldOver)" 17
+job tlc_violated initFlakyTipBudget     step "not(wConformingFirstOffer)" 8
+job tlc_violated initFlakyTipBudget     step "not(wRequeued)" 10
+job tlc_violated initFlakyTipBudget     step "not(wDown)" 2
+job tlc_violated initFlakyTipBudget     step "not(wRestartedOwing)" 6
+job tlc_violated initFlakyTipBudget     step "not(wBlockInFlight)" 9
+job tlc_violated initFlakyTipBudget     step "not(wStopped)" 8
+job tlc_violated initFlakyTipBudget     step "not(wLaggedRelay)" 12      # the tip catch-up after a relay
+job tlc_violated initFlakyTipBudget     step "not(wDeferred)" 18      # one supported tx mined, another waiting
 finish
 fi
 

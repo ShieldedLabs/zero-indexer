@@ -8,6 +8,7 @@ module hubTest {
   import hub.* from "../hub"
   import wire.* from "../wire"
   import abstractHub.* from "../abstractHub"
+  import hubMachine as machine from "../hubMachine"
 
   pure val PARAMS: HubParams = {
     flushInterval: 3,
@@ -16,10 +17,11 @@ module hubTest {
     minWalletExpiry: 6,
     reorgAllowance: 1,
     maxAttempts: 2,
+    blockBudget: None,
   }
 
   pure def orchard(id: str, expiry: Option[Height]): Payload =
-    { id: id, txid: Some(id), created: 1, expiry: expiry, class: OrchardTouching, spends: Set(), oversize: false }
+    { id: id, txid: Some(id), created: 1, expiry: expiry, class: OrchardTouching, spends: Set(), oversize: false, actions: 2 }
 
   pure val pA = orchard("a", Some(9))
   pure val pB = orchard("b", Some(9))
@@ -27,10 +29,10 @@ module hubTest {
   /// A second signing of `pC`: different bytes, the same txid.
   pure val pCSigned = { ...pC, id: "c-signed" }
   pure val pTight = orchard("tight", Some(6))
-  pure val pJunk = { id: "junk", txid: None, created: 1, expiry: None, class: Unparseable, spends: Set(), oversize: false }
+  pure val pJunk = { id: "junk", txid: None, created: 1, expiry: None, class: Unparseable, spends: Set(), oversize: false, actions: 0 }
 
   pure val PAYLOADS = Set(pA, pB, pC, pTight, pJunk)
-  pure val REFUSALS = Set(TipStale, HubDraining, ExpiryTooTight, SpentProof)
+  pure val REFUSALS = Set(TipStale, HubDraining, ExpiryTooTight, SpentProof, BatchFull)
 
   /// The state after `input`.
   pure def after(state: HubState, input: HubInput): HubState =
@@ -78,6 +80,13 @@ module hubTest {
 
   pure val STATES = Set(down, starting, running(2), running(5), holding, flushing, stale, draining, stopped,
     stale.after(DrainHInput), flushing.after(verdict(pA, Retryable)), burnedC)
+
+  /// The schedule with the candidate fix of #121: a per-flush budget of 2, and
+  /// a mining margin of 2, so the holdoff ends 1 + 2 blocks after it starts.
+  pure val BUDGET_PARAMS: HubParams = { ...PARAMS, miningMargin: 2, blockBudget: Some(2) }
+  pure def budgeted(tip: Height): HubState = startingHub(BUDGET_PARAMS).after(TipHInput(tip))
+  /// Budgeted, running at tip 2, with `pA` queued: the budget is spent.
+  pure val budgetFull = budgeted(2).after(submit(pA))
 
   pure val INPUTS: Set[HubInput] =
     PAYLOADS.map(payload => submit(payload))
@@ -149,11 +158,20 @@ module hubTest {
     assert(admission(burnedC, pC, false) == Refused(SpentProof)),
     assert(admission(burnedC, pCSigned, false) == Refused(SpentProof)),
     assert(admission(burnedC, pJunk, false) == Admitted),
+    // With a budget, a payload that would take the batch past it is refused,
+    // after the duplicate check. The flight counts toward the budget.
+    assert(admission(budgeted(2), pB, false) == Admitted),
+    assert(admission(budgetFull, pB, false) == Refused(BatchFull)),
+    assert(admission(budgetFull, pA, false) == Duplicate),
+    assert(admission(budgetFull, pJunk, false) == Admitted),
+    assert(admission(budgetFull.after(TipHInput(5)).after(FlushDueHInput), pC, false) == Refused(BatchFull)),
+    // A resend of bytes in flight is admitted under a full budget: it costs once.
+    assert(admission(budgeted(2).after(submit(pC)).after(TipHInput(5)).after(FlushDueHInput), pC, false) == Admitted),
     // Every refusal is produced, and a refusal changes nothing.
     assert(REFUSALS.forall(refusal =>
-      tuples(STATES, PAYLOADS).exists(((state, payload)) =>
+      tuples(STATES.union(Set(budgetFull)), PAYLOADS).exists(((state, payload)) =>
         state.isServing() and outputOf(state, submit(payload)) == AckOutput({ nonce: 0, kind: Refused(refusal) })))),
-    assert(tuples(STATES, PAYLOADS).forall(((state, payload)) =>
+    assert(tuples(STATES.union(Set(budgetFull)), PAYLOADS).forall(((state, payload)) =>
       match outputOf(state, submit(payload)) {
         | AckOutput(ack) => ack.kind == Admitted or state.after(submit(payload)) == state
         | _ => true
@@ -335,6 +353,52 @@ module hubTest {
       .after(FlushDoneHInput).phase == Draining),
     assert(flushing.after(DrainHInput).after(verdict(pA, Accepted)).after(verdict(pJunk, Retryable))
       .after(FlushDoneHInput).isFlushDue()),
+  }
+
+  /// The holdoff, on `BUDGET_PARAMS`: a flush waits until the cadence is the
+  /// reorg allowance plus the mining margin past `holdFrom`.
+  pure val pTen = orchard("ten", Some(10))
+  pure val pEleven = orchard("eleven", Some(11))
+
+  run holdoffTest =
+    // Adopted at tip 3, with `pC` queued; the flush at 6 relays it.
+    val flying = budgeted(3).after(submit(pC)).after(TipHInput(6)).after(FlushDueHInput)
+    val relayed = flying.after(verdict(pC, Accepted)).after(FlushDoneHInput)
+    val drainingAt9 = relayed.after(DrainHInput).after(TipHInput(9))
+    val both = { ...drainingAt9, queue: Map(pTen -> 0, pEleven -> 0) }
+    val onlyTen = { ...drainingAt9, queue: Map(pTen -> 0) }
+    all {
+      // A start adopts the tip as `holdFrom`. Adopted at 5, in epoch 1: no
+      // flush at 6 or 7, and one at 8.
+      assert(budgeted(5).holdFrom == 5 and budgeted(5).lastEpoch == Some(1)),
+      assert(not(budgeted(5).after(TipHInput(6)).isFlushDue())),
+      assert(not(budgeted(5).after(TipHInput(7)).isFlushDue())),
+      assert(budgeted(5).after(TipHInput(8)).isFlushDue()),
+      // Without a budget the same hub flushes at the boundary, 6.
+      assert(running(5).after(TipHInput(6)).isFlushDue() and running(5).holdFrom == 0),
+      // A flush that begins leaves `holdFrom` alone; the relay's end sets it
+      // to the tip.
+      assert(flying.holdFrom == 3 and flying.inFlight() == Set(pC)),
+      assert(relayed.holdFrom == 6 and relayed.flush == Idle),
+      // A draining hub observes the tip, and its final flush waits out the
+      // holdoff: not due at 8, due at 9.
+      assert(relayed.after(DrainHInput).after(TipHInput(8)).phase == Draining),
+      assert(not(relayed.after(DrainHInput).after(TipHInput(8)).isFlushDue())),
+      assert(drainingAt9.phase == Draining and drainingAt9.isFlushDue()),
+      // The final flush at 9 publishes what clears the margin, and drops the
+      // rest.
+      assert(outputOf(both, FlushDueHInput) == BroadcastOutput(Set(pEleven))),
+      assert(both.after(FlushDueHInput).inFlight() == Set(pEleven) and both.after(FlushDueHInput).queue == Map()),
+      // With nothing left to publish it stops the hub.
+      assert(onlyTen.after(FlushDueHInput).phase == Stopped and onlyTen.after(FlushDueHInput).queue == Map()),
+    }
+
+  /// `budgetFitsBlock` holds of the budgeted configuration, and fails once
+  /// the budget is more than one block's share.
+  run budgetFitsBlockTest = all {
+    assert(machine::budgetFitsBlock(machine::flakyTipBudget)),
+    assert(not(machine::budgetFitsBlock(
+      { ...machine::flakyTipBudget, params: { ...machine::flakyTipBudget.params, blockBudget: Some(3) } }))),
   }
 
   run crashAndRestartTest = all {
