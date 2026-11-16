@@ -993,7 +993,12 @@ fn inspect(headers: &HeaderMap, frame: &[u8]) -> (Inspection, Option<Bytes>) {
 /// transaction bytes that justifies writing them where the operator can read
 /// them.
 fn log_verdict(inspection: &Inspection, frame: &[u8]) {
-    let diverted_in_production = inspection.treat_as_migration();
+    // What a shim with a hub does with it. It diverts a migration, except the
+    // two kinds `send_transaction` refuses first, and the line must not claim
+    // a diversion that does not happen.
+    let diverted_in_production = inspection.treat_as_migration()
+        && !inspection.is_retired_version()
+        && !inspection.is_unrecognised_branch();
 
     match inspection {
         Inspection::Classified(evidence) => {
