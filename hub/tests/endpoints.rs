@@ -3,8 +3,8 @@
 //! Both exist because of the same fact: an ATTESTED enclave has no console.
 //! `GET /nym-address` publishes the address the hub minted (previously
 //! log-only, so reading it required debug mode, which disables attestation —
-//! reading it and proving it were mutually exclusive). `GET /healthz` says the
-//! process is serving.
+//! reading it and proving it were mutually exclusive). `GET /healthz` says
+//! whether the hub trusts its chain tip.
 //!
 //! The third property here is a subtraction. `POST /` used to accept an
 //! unauthenticated submission from anyone on the internet, on an enclave that
@@ -14,7 +14,7 @@
 //! lookup path `POST /transaction` closes with it.
 //!
 //! What every assertion below also guards: these responses carry the address
-//! and liveness and NOTHING else. A queue depth or batch size returned here
+//! and the tip's state and NOTHING else. A queue depth or batch size returned here
 //! would be a live anonymity-set-size oracle for anyone who can reach the hub,
 //! which `server.rs`'s header forbids — and unlike the shim-facing paths, these
 //! are reachable by everyone.
@@ -72,10 +72,15 @@ async fn hanging_indexer() -> std::net::SocketAddr {
 
 /// Start a hub with the given options and return its address.
 async fn spawn(options: ServeOptions) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap().to_string();
     let tip = Arc::new(TipTracker::new(TipGuard::Unguarded));
     tip.observe(&[100]);
+    spawn_with_tip(options, tip).await
+}
+
+/// Start a hub on a tip the test keeps hold of.
+async fn spawn_with_tip(options: ServeOptions, tip: Arc<TipTracker>) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
     tokio::spawn(server::serve(
         listener,
         Hub::new(
@@ -139,11 +144,24 @@ async fn nym_address_is_published_once_the_driver_has_one() {
     assert_eq!(body, ADDRESS);
 }
 
+/// A hub with no tip it trusts refuses every send as `tip_stale`. That hub
+/// used to answer `/healthz` with `200 ok` all the same, so nothing an
+/// operator would plausibly alert on saw it.
 #[tokio::test]
-async fn healthz_answers_while_serving() {
-    let addr = spawn(ServeOptions::default()).await;
-    let (status, _) = get(&addr, "/healthz").await;
+async fn healthz_is_503_until_the_hub_trusts_a_tip() {
+    let tip = Arc::new(TipTracker::new(TipGuard::Unguarded));
+    let addr = spawn_with_tip(ServeOptions::default(), tip.clone()).await;
+
+    assert!(tip.is_stale(), "precondition: admission would refuse");
+    let (status, body) = get(&addr, "/healthz").await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body, "tip stale");
+
+    tip.observe(&[100]);
+    assert!(!tip.is_stale(), "precondition: admission is open");
+    let (status, body) = get(&addr, "/healthz").await;
     assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, "ok");
 }
 
 /// Neither read-only endpoint may leak anything about what the hub is holding.
