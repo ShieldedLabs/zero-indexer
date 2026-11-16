@@ -896,7 +896,7 @@ fn inspect(headers: &HeaderMap, frame: &[u8]) -> (Inspection, Option<Bytes>) {
 /// Orchard/Ironwood/Sapling value balances, action count, input/output counts
 /// and length; the failsafe arms additionally logged a hex prefix of the raw
 /// body. In an enclave the log reaches the parent host, so that was a
-/// fingerprint the operator could hold for 25 minutes and match against the
+/// fingerprint the operator could hold until the flush and match against the
 /// batch when it published -- exactly the wallet-to-txid link the shim exists to
 /// break. The `TooLarge` arm in `send_transaction` already refused to log the
 /// size for this reason; the rest of the file had not caught up.
@@ -1396,5 +1396,18 @@ mod tests {
             drop(body);
             assert_eq!(budget.0.available_permits(), 1024);
         }
+    }
+
+    #[test]
+    fn a_real_nu7_transaction_passes_the_lookup_guard() {
+        // A migration mined on mainnet after NU7. The wire hash a wallet sends
+        // is its txid reversed.
+        let tx = include_bytes!("../tests/fixtures/mainnet_nu7_migration.bin");
+        let mut wire =
+            hex::decode("0f7de50277a5fa67cbd3f6c9df4e8edfca561879b8784f46356c931300764773")
+                .unwrap();
+        wire.reverse();
+        assert!(lookup_is_for_query(tx, &wire));
+        assert!(!lookup_is_for_query(tx, &[0; 32]));
     }
 }

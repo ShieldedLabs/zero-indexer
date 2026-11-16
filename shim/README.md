@@ -89,7 +89,7 @@ from growing:
 **Orchard only, not Ironwood, and that boundary is deliberate.** Ironwood is the
 NEW pool, where ordinary time-sensitive commerce will live, so the
 time-insensitivity half of the rationale does not hold for it. A transaction
-carrying only Ironwood actions reads `orchard_shielded_data() == None` and passes
+carrying only Ironwood actions reads `has_orchard_shielded_data() == false` and passes
 through. There is no Ironwood arm in the predicate and none should be added
 (`an_ironwood_only_transaction_is_a_pass_through` pins it, whichever way the
 Ironwood balance points). The transparent-only arm keeps this boundary: a
@@ -134,16 +134,15 @@ Three precisions to keep straight:
   test does not.
 * V5 transactions carry Orchard bundles too, so a V5 Orchard spend leaks the same
   fact as a V6 one and is caught by the same line. Dropping the version conjunct
-  needs no replacement guard: `zebra-chain`'s `orchard_shielded_data()` is
-  version-agnostic and returns `None` for V1..V4, where there is no Orchard
+  needs no replacement guard: `zebra-chain`'s `has_orchard_shielded_data()` is
+  version-agnostic and returns false for V1..V4, where there is no Orchard
   bundle at all, so a transparent transaction passes by the predicate itself
   rather than by a special case.
 * The predicate is written as "an Orchard bundle is present" rather than "the
   action count is non-zero" because the two are *exactly* equivalent and the
   first form cannot be fooled by an empty bundle:
-  `orchard::ShieldedData.actions` is an `AtLeastOne<AuthorizedAction>`
-  (`src/orchard/shielded_data.rs` in `zebra-chain`), so a bundle that exists
-  carries at least one action. `presence_and_action_count_agree` pins the
+  `orchard::Bundle` keeps its actions in a `NonEmpty` (`src/bundle.rs` in
+  `orchard`), so a bundle that exists carries at least one action. `presence_and_action_count_agree` pins the
   equivalence, and a `debug_assert` in `classify_with_evidence` fires in debug
   and in CI if it ever stops holding.
 
@@ -398,7 +397,7 @@ node, which is why it is not here.
 ## Notes for whoever picks this up
 
 * `zebra-chain` and `zaino-proto` are **exact-version crates.io pins**
-  (`=12.0.0`, `=0.6.0`), fixed by `Cargo.lock` checksums. `zaino-proto` must
+  (`=15.0.0`, `=0.6.0`), fixed by `Cargo.lock` checksums. `zaino-proto` must
   stay `default-features = false`: its `heavy` feature lets its `build.rs` find
   `protoc` and regenerate its committed protos, and it also pulls a second,
   type-incompatible `zebra-chain`. The build sets no `PROTOC`.

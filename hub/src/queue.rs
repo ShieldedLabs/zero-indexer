@@ -151,7 +151,7 @@ fn lane_index(lane: Lane) -> usize {
 /// unanimous `Anchor` once the tip is fresh and the observed height is above
 /// the mark. A split answer and an `Anchor` that is not due are put back, and
 /// this counts those flushes on the entry. A resend starts at zero.
-/// Eight flushes is a few hours at the production cadence.
+/// Eight flushes is a little over an hour at the production cadence.
 pub const MAX_REQUEUE_ATTEMPTS: u32 = 8;
 
 /// Why a submission was not admitted.
@@ -1082,31 +1082,43 @@ mod tests {
     }
 
     fn second_leg_at(parent: &[u8], index: u32, value: u64) -> Vec<u8> {
-        use zebra_chain::serialization::{ZcashDeserialize, ZcashSerialize};
-        use zebra_chain::{block, parameters::NetworkUpgrade, transaction, transparent};
+        use zcash_primitives::transaction::{TransactionData, TxVersion};
+        use zcash_protocol::consensus::{BlockHeight, BranchId};
+        use zcash_protocol::value::Zatoshis;
+        use zcash_transparent::bundle::{Authorized, Bundle, OutPoint, TxIn, TxOut};
+        use zebra_chain::serialization::ZcashDeserialize;
+        use zebra_chain::transaction::Transaction;
+        use zebra_chain::transparent::Script;
 
-        let parent = transaction::Transaction::zcash_deserialize(parent).unwrap();
-        transaction::Transaction::V5 {
-            network_upgrade: NetworkUpgrade::Nu6_3,
-            lock_time: transaction::LockTime::unlocked(),
-            expiry_height: block::Height(0),
-            inputs: vec![transparent::Input::PrevOut {
-                outpoint: transparent::OutPoint {
-                    hash: parent.hash(),
-                    index,
-                },
-                unlock_script: transparent::Script::new(&[0x51]),
-                sequence: u32::MAX,
-            }],
-            outputs: vec![transparent::Output {
-                value: value.try_into().unwrap(),
-                lock_script: transparent::Script::new(&[0x51]),
-            }],
-            sapling_shielded_data: None,
-            orchard_shielded_data: None,
-        }
-        .zcash_serialize_to_vec()
+        let parent = Transaction::zcash_deserialize(parent).unwrap();
+        let transparent = Bundle {
+            vin: vec![TxIn::from_parts(
+                OutPoint::new(parent.hash().0, index),
+                Script::new(&[0x51]).into(),
+                u32::MAX,
+            )],
+            vout: vec![TxOut::new(
+                Zatoshis::from_u64(value).unwrap(),
+                Script::new(&[0x51]).into(),
+            )],
+            authorization: Authorized,
+        };
+        let mut bytes = Vec::new();
+        TransactionData::from_parts(
+            TxVersion::V5,
+            BranchId::Nu6_3,
+            0,
+            BlockHeight::from_u32(0),
+            Some(transparent),
+            None,
+            None,
+            None,
+        )
+        .freeze()
         .unwrap()
+        .write(&mut bytes)
+        .unwrap();
+        bytes
     }
 
     fn admitted(admission: Admission) -> bool {

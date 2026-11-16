@@ -33,7 +33,7 @@ path = "src/main.rs"
 # Compile the Nym mixnet transport driver (src/nym_driver.rs) and link nym-sdk.
 # Off by default: the shipped clearnet binary does not carry the SDK, so its
 # reproducible measurement is unchanged. The enclave build turns this on.
-mixnet-driver = ["dep:nym-sdk"]
+mixnet-driver = ["dep:nym-sdk", "dep:ed25519-zebra-4"]
 # The driver's localnet path: connect to the mixnet the nymnet harness starts
 # from a hardcoded topology file, so the end-to-end test drives the shipped
 # driver rather than a stand-in. Test-only; the production driver never loads a
@@ -43,7 +43,7 @@ mixnet-localnet = ["mixnet-driver", "dep:nym-topology"]
 [dependencies]
 # The real Zcash parser, pinned to the exact crates.io release. The default
 # feature set is empty and V6/Ironwood support is unconditional in this release.
-zebra-chain = "=12.0.0"
+zebra-chain = "=15.0.0"
 
 # default-features = false is load-bearing, for two independent reasons:
 #  1. The default "heavy" feature lets zaino-proto's build.rs find protoc via
@@ -116,6 +116,12 @@ clap = { version = "4", features = ["derive", "env"] }
 # is resolved by the [patch] at the bottom of this file.
 nym-sdk = { git = "https://github.com/nymtech/nym", tag = "nym-binaries-v2026.15-bydgoszcz", optional = true }
 
+# cosmwasm-crypto, deep in nym-sdk's credential code, calls ed25519-zebra 4's
+# batch verifier without asking for the `alloc` feature it needs, so it only
+# builds when another crate turns that on. zebra-chain 15 moved to
+# ed25519-zebra 5 and nothing else does, so this turns it on. Never used here.
+ed25519-zebra-4 = { package = "ed25519-zebra", version = "4", default-features = false, features = ["alloc"], optional = true }
+
 # Only for the localnet end-to-end test (the mixnet-localnet feature): loads the
 # hardcoded topology the nymnet harness writes so the driver connects to the
 # local mixnet instead of the default network. Never in the production driver.
@@ -130,7 +136,11 @@ tokio = { version = "1", features = ["test-util"] }
 # uses to build real V6 wire bytes. With resolver 2 (implied by edition 2021)
 # dev-dependency features do not leak into `cargo build`, so the shipped binary
 # does not link proptest.
-zebra-chain = { version = "=12.0.0", features = ["proptest-impl"] }
+zebra-chain = { version = "=15.0.0", features = ["proptest-impl"] }
+# The bundle and amount types those helpers take. Already in the tree through
+# zebra-chain.
+orchard = "0.16"
+zcash_protocol = "0.11"
 hex = "0.4"
 # Encodes and decodes grpc-web-text bodies in tests/grpc_web.rs. Already in the
 # tree through tonic-web.
@@ -150,12 +160,14 @@ h2 = "0.4"
 
 # Substitute the vendored slim copy of nym-upgrade-mode-check (see
 # vendor/nym-upgrade-mode-check/Cargo.toml). The real crate's jwt-simple subtree
-# cannot share a lockfile with the vendored zebra-chain: superboring's ml-dsa
-# wants stable crypto-common ^0.2, while zcash_primitives pins the pre-release
-# =0.2.0-rc.1. The slim copy keeps the attestation data types verbatim and drops
-# the JWT half the driver never touches. The patch is unconditional (Cargo has no
-# per-feature patch), but it only binds when nym-sdk is in the graph, i.e. when
-# the mixnet-driver feature resolves it.
+# could not share a lockfile with zebra-chain 12: superboring's ml-dsa wants
+# stable crypto-common ^0.2, and zcash_primitives pinned the pre-release
+# =0.2.0-rc.1. zebra-chain 15 lifts that pin, but dropping the patch adds about
+# 20 packages and the mixnet build is untested without it, so it stays. The slim
+# copy keeps the attestation data types verbatim and drops the JWT half the
+# driver never touches. The patch is unconditional (Cargo has no per-feature
+# patch), but it only binds when nym-sdk is in the graph, i.e. when the
+# mixnet-driver feature resolves it.
 [patch."https://github.com/nymtech/nym"]
 nym-upgrade-mode-check = { path = "../vendor/nym-upgrade-mode-check" }
 

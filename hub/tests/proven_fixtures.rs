@@ -38,7 +38,7 @@ use orchard::{
     value::NoteValue,
     Anchor, Bundle,
 };
-use rand08::rngs::OsRng;
+use rand010::rng;
 use zcash_primitives::transaction::{Authorized, TransactionData};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{ZatBalance, Zatoshis};
@@ -106,7 +106,7 @@ fn migration(pk: &ProvingKey, seed: u8) -> [Vec<u8>; 3] {
         .add_output(None, recipient, NoteValue::from_raw(100_000), [0; 512])
         .expect("outputs are enabled");
     let (shielding, meta) = shielding
-        .build::<i64>(OsRng)
+        .build::<i64>(rng())
         .expect("the bundle builds")
         .expect("the bundle is non-empty");
     let (note, _, _) = shielding
@@ -137,10 +137,10 @@ fn migration(pk: &ProvingKey, seed: u8) -> [Vec<u8>; 3] {
         .add_spend(fvk.clone(), note, path)
         .expect("the path matches the anchor");
     let (orchard, _) = orchard
-        .build::<ZatBalance>(OsRng)
+        .build::<ZatBalance>(rng())
         .expect("the bundle builds")
         .expect("the bundle is non-empty");
-    let orchard = orchard.create_proof(pk, OsRng).expect("the proof builds");
+    let orchard = orchard.create_proof(pk, rng()).expect("the proof builds");
 
     let mut ironwood = Builder::new(
         BundleType::DEFAULT,
@@ -153,21 +153,21 @@ fn migration(pk: &ProvingKey, seed: u8) -> [Vec<u8>; 3] {
         .add_output(None, recipient, NoteValue::from_raw(50_000), [0; 512])
         .expect("outputs are enabled");
     let (ironwood, _) = ironwood
-        .build::<ZatBalance>(OsRng)
+        .build::<ZatBalance>(rng())
         .expect("the bundle builds")
         .expect("the bundle is non-empty");
-    let ironwood = ironwood.create_proof(pk, OsRng).expect("the proof builds");
+    let ironwood = ironwood.create_proof(pk, rng()).expect("the proof builds");
 
     let keys = [SpendAuthorizingKey::from(&sk)];
     let sign = |sighash: [u8; 32]| {
         v6_bytes(
             orchard
                 .clone()
-                .apply_signatures(OsRng, sighash, &keys)
+                .apply_signatures(rng(), sighash, &keys)
                 .expect("the spend's key signs"),
             ironwood
                 .clone()
-                .apply_signatures(OsRng, sighash, &[])
+                .apply_signatures(rng(), sighash, &[])
                 .expect("dummy spends sign themselves"),
         )
     };
