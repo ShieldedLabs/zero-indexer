@@ -198,7 +198,7 @@ impl Evidence {
     /// divert-everything box, sending ordinary traffic to the hub (Hornby review,
     /// 2026-08-19).
     ///
-    /// Reporting it is free and changes no behaviour. Whether the shim should
+    /// Reporting it is free and changes no routing. Whether the shim should
     /// then fail closed, keep diverting, or refuse to start is a decision with a
     /// deadline set by the network, and this is the signal that decision needs.
     ///
