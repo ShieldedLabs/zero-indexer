@@ -41,6 +41,11 @@ pub const V6_IRONWOOD_ONLY: &[u8] = include_bytes!("../fixtures/v6_ironwood_only
 /// second transaction of a TEX payment, which is diverted.
 pub const V6_TRANSPARENT_ONLY: &[u8] = include_bytes!("../fixtures/v6_transparent_only.bin");
 
+/// A real mainnet V4 transparent-only spend from block 3,539,975, three days
+/// before NU7 retired the format (ZIP 2003): one prevout spent, transparent
+/// parts only.
+pub const MAINNET_V4_SPEND: &[u8] = include_bytes!("../fixtures/mainnet_v4_transparent_spend.bin");
+
 /// The display-order txid of a fixture, computed from the bytes with zebra-chain,
 /// derived independently of the shim's own code path rather than read back from
 /// it.
