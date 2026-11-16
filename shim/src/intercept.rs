@@ -1397,4 +1397,17 @@ mod tests {
             assert_eq!(budget.0.available_permits(), 1024);
         }
     }
+
+    #[test]
+    fn a_real_nu7_transaction_passes_the_lookup_guard() {
+        // A migration mined on mainnet after NU7. The wire hash a wallet sends
+        // is its txid reversed.
+        let tx = include_bytes!("../tests/fixtures/mainnet_nu7_migration.bin");
+        let mut wire =
+            hex::decode("0f7de50277a5fa67cbd3f6c9df4e8edfca561879b8784f46356c931300764773")
+                .unwrap();
+        wire.reverse();
+        assert!(lookup_is_for_query(tx, &wire));
+        assert!(!lookup_is_for_query(tx, &[0; 32]));
+    }
 }
