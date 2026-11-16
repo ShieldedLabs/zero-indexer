@@ -117,6 +117,19 @@ at INFO, so the log never tells the parent host which kind was diverted
 (`the_second_leg_of_a_tex_payment_is_a_migration`,
 `a_transparent_spend_with_a_shielded_bundle_is_a_pass_through`).
 
+**Retired formats.** ZIP 2003 retired V4 transactions at NU7, and no node
+accepts V1 to V4 any more. One that the rules above would divert, in practice a
+V4 transparent-only spend, is refused at the shim with a `SendResponse` error
+and reaches neither the hub nor the operator. The hub could only hold it for a
+flush window and drop it, and forwarding it would name the transaction it
+spends. Any other V1 to V4 transaction forwards as before, and the operator's
+node rejects it. With no hub configured nothing is diverted, so nothing is
+refused (`a_spend_in_a_retired_format_is_refused_and_reaches_neither_hub_nor_operator`).
+The shim has no network or height setting, so the rule applies on every chain.
+Mainnet and testnet are both past NU7. On a regtest chain that has not
+activated NU7, a shim with a hub refuses a V4 spend that chain would still
+mine.
+
 **What the widening closed.** A transaction must pay a fee, and unless the fee
 comes from another pool it comes out of Orchard, so most internal shuffling
 already showed `orchard_value_balance > 0` and the old exit predicate caught it.

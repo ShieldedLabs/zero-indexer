@@ -35,7 +35,8 @@ mod common;
 use common::{
     connect_h2, dead_addr, decode_raw_transaction, decode_send_response, get_transaction,
     get_transaction_filter, send_tx, send_tx_reply, spawn_counting_backend,
-    spawn_forward_only_shim, wire_hash, V6_IRONWOOD_ONLY, V6_MIGRATION, V6_TRANSPARENT_ONLY,
+    spawn_forward_only_shim, wire_hash, MAINNET_V4_SPEND, V6_IRONWOOD_ONLY, V6_MIGRATION,
+    V6_TRANSPARENT_ONLY,
 };
 
 // -------------------------------------------------------------- mock hub
@@ -253,6 +254,54 @@ async fn the_second_leg_of_a_tex_payment_is_diverted_and_the_operator_is_never_c
         backend_conns.load(Ordering::SeqCst),
         0,
         "a transparent-only spend must not dial the operator"
+    );
+}
+
+#[tokio::test]
+async fn a_spend_in_a_retired_format_is_refused_and_reaches_neither_hub_nor_operator() {
+    // A real V4 spend from mainnet. ZIP 2003 retired V4 at NU7, so no node
+    // accepts it now and the hub could only hold it for a window and drop it.
+    // Its prevout still names the transaction it spends, so it must not be
+    // forwarded either.
+    let hub_seen = Arc::new(Mutex::new(None));
+    let hub = spawn_mock_hub("unused", hub_seen.clone()).await;
+    let backend_conns = Arc::new(AtomicUsize::new(0));
+    let backend = spawn_counting_backend(backend_conns.clone()).await;
+    let shim = spawn_diverting_shim(backend, hub).await;
+
+    let mut sender = connect_h2(shim).await;
+    let body = send_tx(&mut sender, shim, MAINNET_V4_SPEND).await;
+
+    let resp = decode_send_response(&body);
+    assert_ne!(
+        resp.error_code, 0,
+        "the wallet was told a transaction no node accepts was sent"
+    );
+    assert!(
+        hub_seen.lock().unwrap().is_none(),
+        "the hub was handed a transaction no node accepts"
+    );
+    assert_eq!(
+        backend_conns.load(Ordering::SeqCst),
+        0,
+        "a transparent-only spend must not dial the operator"
+    );
+}
+
+#[tokio::test]
+async fn without_a_hub_a_retired_format_is_still_forwarded() {
+    // Forward-only mode diverts nothing, so the operator's node gets the
+    // transaction and rejects it itself, as it does without a shim.
+    let backend_conns = Arc::new(AtomicUsize::new(0));
+    let backend = spawn_counting_backend(backend_conns.clone()).await;
+    let shim = spawn_forward_only_shim(backend).await;
+
+    let mut sender = connect_h2(shim).await;
+    let body = send_tx(&mut sender, shim, MAINNET_V4_SPEND).await;
+
+    assert_eq!(
+        decode_send_response(&body).error_message,
+        "operator-answered"
     );
 }
 
