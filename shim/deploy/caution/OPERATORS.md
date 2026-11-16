@@ -483,13 +483,15 @@ today the recovery is manual.
   nothing else. It answers `503` while `mixnet_connected` is `false` on a shim
   built with `--hub-nym`. It also answers `503` once the hub has handed back a
   transaction on a consensus branch this build does not know. After a network
-  upgrade that is a build that predates it: the shim is diverting everything it
-  is sent and answering every lookup of a mined one with `NOT_FOUND`, and
-  it needs a redeploy on a current build. So check that an upgrade has
+  upgrade that is a build that predates it: the shim is refusing every V5 and V6
+  send on the new branch and answering every lookup of one mined on it with
+  `NOT_FOUND`, and it needs a redeploy on a current build. So check that an upgrade has
   activated before you redeploy. If none has, one of the hub's indexers returned
   bytes it should not have, a redeploy will not keep it clear, and the hub's
   operator is the one to tell. A wallet cannot cause it. It is set from what
-  the hub returns for a lookup, never from the bytes a wallet sends.
+  the hub returns for a lookup, never from the bytes a wallet sends. So the
+  refused sends alone do not turn it red, and on a shim that wallets use only to
+  send, that lookup may not come: watch the upgrade schedule as well.
 
   Neither endpoint exposes send counts, timestamps, or txids — a "last diverted
   at" field would tell any passer-by exactly when a migration went out, which is

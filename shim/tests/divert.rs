@@ -967,8 +967,8 @@ fn unframe_submit(body: &[u8]) -> Vec<u8> {
 ///
 /// Refusing costs nothing real: a wallet never sends a zero-length transaction.
 /// This does not weaken REVIEW #5 — an unparseable payload with actual bytes is
-/// still diverted and still published, which `an_unparseable_body_is_diverted`
-/// above covers.
+/// still diverted and still published, an unknown consensus branch aside, which
+/// `an_unparseable_body_is_diverted` above covers.
 #[tokio::test]
 async fn an_empty_transaction_is_refused_rather_than_diverted() {
     let txid = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899";

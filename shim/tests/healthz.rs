@@ -1,7 +1,7 @@
 //! `/healthz` on a shim whose build does not know the chain's consensus branch.
 //!
-//! A shim built before a network upgrade reads every transaction on the new
-//! consensus branch as unparseable. With a hub it diverts all of them, and
+//! A shim built before a network upgrade reads every V5 and V6 transaction on
+//! the new consensus branch as unparseable. With a hub it refuses them, and
 //! answers every lookup of a mined one with NOT_FOUND. It says so in a log,
 //! and the operator of an attested shim cannot read that log. So the status
 //! code has to say it.

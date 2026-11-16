@@ -181,8 +181,9 @@ fn a_real_nu7_ironwood_only_transaction_is_a_pass_through() {
     let evidence = classify_with_evidence(MAINNET_NU7_IRONWOOD_ONLY);
     println!("{evidence:?}");
 
-    // On a parser that predates NU7 this is unparseable, and unparseable is
-    // diverted, so every ordinary send went to the hub.
+    // On a parser that predates NU7 this is unparseable. A shim with a hub
+    // diverted it then, so every ordinary send went to the hub, and refuses it
+    // now.
     assert!(
         !evidence.is_unrecognised_branch(),
         "the NU7 branch ID is known"

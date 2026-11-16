@@ -116,8 +116,9 @@ pub const CAUTION_ATTESTATION: &str = "/attestation";
 /// It answers 503 for one more reason: the hub has handed back a transaction
 /// on a consensus branch this build does not know
 /// ([`crate::intercept::BEHIND_THE_CHAIN`]). That is what a shim built before
-/// a network upgrade sees. It diverts everything it is sent and answers every
-/// lookup of a mined one with NOT_FOUND, and it was just as invisible.
+/// a network upgrade sees. It refuses every V5 and V6 send on the new branch and
+/// answers every lookup of one mined on it with NOT_FOUND, and it was just as
+/// invisible.
 ///
 /// Neither collides with a wallet call: every CompactTxStreamer method lives
 /// under `/cash.z.wallet.sdk.rpc.CompactTxStreamer/`.
