@@ -125,6 +125,10 @@ flush window and drop it, and forwarding it would name the transaction it
 spends. Any other V1 to V4 transaction forwards as before, and the operator's
 node rejects it. With no hub configured nothing is diverted, so nothing is
 refused (`a_spend_in_a_retired_format_is_refused_and_reaches_neither_hub_nor_operator`).
+The shim has no network or height setting, so the rule applies on every chain.
+Mainnet and testnet are both past NU7. On a regtest chain that has not
+activated NU7, a shim with a hub refuses a V4 spend that chain would still
+mine.
 
 **What the widening closed.** A transaction must pay a fee, and unless the fee
 comes from another pool it comes out of Orchard, so most internal shuffling
