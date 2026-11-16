@@ -180,7 +180,7 @@ printf '\x00\x00\x00\x00\x00' | curl -s --http2 \
 Both probes above are the check for a shim with `ZIS_BROADCAST_ONLY` off. With
 it on, `GetLightdInfo` is not relayed: the same probe returns HTTP 200 with
 `grpc-status: 12` and an empty body (add `-i` to the curl to see the header),
-and `https://<tls-domain>/healthz` is the liveness check.
+and `https://<tls-domain>/healthz` is the health check.
 
 **On fully-managed apps, pass the attestation URL explicitly.** `caution apps
 create` does not write a `.caution/deployment.json` (that is `caution init`, the
@@ -479,10 +479,22 @@ today the recovery is manual.
   | `client_deaths` | climbing steadily: gateway churn |
   | `consecutive_rebuild_failures` | non-zero and growing: it is down and not recovering |
 
-  `GET /healthz` is process liveness. Neither endpoint exposes send counts,
-  timestamps, or txids — a "last diverted at" field would tell any passer-by
-  exactly when a migration went out, which is the timing correlation this system
-  exists to prevent.
+  `GET /healthz` carries the verdict on its status code, for a monitor that reads
+  nothing else. It answers `503` while `mixnet_connected` is `false` on a shim
+  built with `--hub-nym`. It also answers `503` once the hub has handed back a
+  transaction on a consensus branch this build does not know. After a network
+  upgrade that is a build that predates it: the shim is diverting everything it
+  is sent and answering every lookup of a mined one with `NOT_FOUND`, and
+  it needs a redeploy on a current build. So check that an upgrade has
+  activated before you redeploy. If none has, one of the hub's indexers returned
+  bytes it should not have, a redeploy will not keep it clear, and the hub's
+  operator is the one to tell. A wallet cannot cause it. It is set from what
+  the hub returns for a lookup, never from the bytes a wallet sends.
+
+  Neither endpoint exposes send counts, timestamps, or txids — a "last diverted
+  at" field would tell any passer-by exactly when a migration went out, which is
+  the timing correlation this system exists to prevent. The upgrade answer is
+  set once per process, so it marks the time of one lookup and no other.
 
 **Related: `GetTransaction` for a just-diverted migration is slow, and may not
 answer at all.** The mixnet is slow — a migration can take minutes to reach the

@@ -113,6 +113,12 @@ pub const CAUTION_ATTESTATION: &str = "/attestation";
 /// `/nym-status` still carries the detail behind that verdict (see
 /// [`crate::nym::MixnetStatus`] for what is deliberately NOT in it).
 ///
+/// It answers 503 for one more reason: the hub has handed back a transaction
+/// on a consensus branch this build does not know
+/// ([`crate::intercept::BEHIND_THE_CHAIN`]). That is what a shim built before
+/// a network upgrade sees. It diverts everything it is sent and answers every
+/// lookup of a mined one with NOT_FOUND, and it was just as invisible.
+///
 /// Neither collides with a wallet call: every CompactTxStreamer method lives
 /// under `/cash.z.wallet.sdk.rpc.CompactTxStreamer/`.
 pub const SHIM_HEALTH: &str = "/healthz";
@@ -859,10 +865,20 @@ async fn handle(
         // lose and stays 200, so this cannot page an operator about a component
         // that deployment never ran. Caution's own liveness path is separate
         // (`caution_health_ok`), so a 503 here does not fail the platform check.
-        Route::ShimHealth => Ok(if status.is_healthy() {
-            text_response(200, "ok")
-        } else {
+        //
+        // The second 503 is a build that the hub has handed a transaction on
+        // a consensus branch it does not know (`intercept::BEHIND_THE_CHAIN`).
+        // Only a shim with a hub can set it, so a forward-only shim stays 200
+        // here as well.
+        Route::ShimHealth => Ok(if !status.is_healthy() {
             text_response(503, "mixnet client not connected")
+        } else if intercept::BEHIND_THE_CHAIN.load(std::sync::atomic::Ordering::Relaxed) {
+            text_response(
+                503,
+                "the hub returned a transaction on a consensus branch this build does not know",
+            )
+        } else {
+            text_response(200, "ok")
         }),
         Route::ShimNymStatus => Ok(json_response(&status.to_json())),
         // Gated: open, it answers; closed, it is indistinguishable from any
@@ -935,7 +951,9 @@ pub enum Route {
     /// when it is disabled this falls through to `PassThrough`.
     CautionAttestation,
     /// [`SHIM_HEALTH`]: whether the shim can carry a migration, answered locally.
-    /// 200 while it can, 503 once a CONFIGURED mixnet client is down.
+    /// 200 while it can, 503 once a CONFIGURED mixnet client is down or the
+    /// hub has returned a transaction on a consensus branch this build does
+    /// not know.
     ShimHealth,
     /// [`SHIM_NYM_STATUS`]: the mixnet client's lifecycle, answered locally.
     ShimNymStatus,
