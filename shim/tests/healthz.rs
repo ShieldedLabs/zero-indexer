@@ -29,19 +29,10 @@ use zero_indexer_shim::hub::HubClient;
 use zero_indexer_shim::intercept::Diversion;
 use zero_indexer_shim::proxy::SHIM_HEALTH;
 
-use common::{bounded, connect_h2, get_transaction, send_tx, spawn_counting_backend, V6_MIGRATION};
-
-/// A V5 header naming a consensus branch that does not exist. This is what
-/// every transaction on the network looks like to a shim built before the
-/// upgrade that introduced its branch.
-fn v5_on_an_unknown_branch() -> Vec<u8> {
-    let mut raw = Vec::new();
-    raw.extend_from_slice(&0x8000_0005u32.to_le_bytes()); // fOverwintered | v5
-    raw.extend_from_slice(&0x26A7_270Au32.to_le_bytes()); // nVersionGroupId (v5)
-    raw.extend_from_slice(&0xDEAD_BEEFu32.to_le_bytes()); // nConsensusBranchId
-    raw.extend_from_slice(&[0u8; 16]); // lock_time, expiry_height, empty bundles
-    raw
-}
+use common::{
+    bounded, connect_h2, get_transaction, send_tx, spawn_counting_backend, v5_on_an_unknown_branch,
+    V6_MIGRATION,
+};
 
 /// A hub that accepts every submission and answers every lookup with `data` at
 /// a mined height, which is how the real hub answers for a transaction its

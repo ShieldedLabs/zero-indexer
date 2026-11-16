@@ -46,6 +46,18 @@ pub const V6_TRANSPARENT_ONLY: &[u8] = include_bytes!("../fixtures/v6_transparen
 /// parts only.
 pub const MAINNET_V4_SPEND: &[u8] = include_bytes!("../fixtures/mainnet_v4_transparent_spend.bin");
 
+/// A V5 header naming a consensus branch that does not exist. This is what a
+/// V5 transaction on a new branch looks like to a shim built before the
+/// upgrade that introduced it.
+pub fn v5_on_an_unknown_branch() -> Vec<u8> {
+    let mut raw = Vec::new();
+    raw.extend_from_slice(&0x8000_0005u32.to_le_bytes()); // fOverwintered | v5
+    raw.extend_from_slice(&0x26A7_270Au32.to_le_bytes()); // nVersionGroupId (v5)
+    raw.extend_from_slice(&0xDEAD_BEEFu32.to_le_bytes()); // nConsensusBranchId
+    raw.extend_from_slice(&[0u8; 16]); // lock_time, expiry_height, empty bundles
+    raw
+}
+
 /// The display-order txid of a fixture, computed from the bytes with zebra-chain,
 /// derived independently of the shim's own code path rather than read back from
 /// it.
