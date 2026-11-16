@@ -179,11 +179,13 @@ opt-level = 3
 
 # Substitute the vendored slim copy of nym-upgrade-mode-check (see
 # vendor/nym-upgrade-mode-check/Cargo.toml). The real crate's jwt-simple subtree
-# cannot share a lockfile with the vendored zebra-chain: superboring's ml-dsa
-# wants stable crypto-common ^0.2, while zcash_primitives pins the pre-release
-# =0.2.0-rc.1. The slim copy keeps the attestation data types verbatim and drops
-# the JWT half the driver never touches. Unconditional (Cargo has no per-feature
-# patch), but only binds when nym-sdk is in the graph, i.e. with mixnet-driver.
+# could not share a lockfile with zebra-chain 12: superboring's ml-dsa wants
+# stable crypto-common ^0.2, and zcash_primitives pinned the pre-release
+# =0.2.0-rc.1. zebra-chain 15 lifts that pin, but dropping the patch adds about
+# 20 packages and the mixnet build is untested without it, so it stays. The slim
+# copy keeps the attestation data types verbatim and drops the JWT half the
+# driver never touches. Unconditional (Cargo has no per-feature patch), but only
+# binds when nym-sdk is in the graph, i.e. with mixnet-driver.
 [patch."https://github.com/nymtech/nym"]
 nym-upgrade-mode-check = { path = "../vendor/nym-upgrade-mode-check" }
 
