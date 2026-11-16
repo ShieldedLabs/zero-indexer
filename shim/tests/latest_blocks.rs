@@ -163,7 +163,15 @@ async fn every_transaction_in_the_latest_blocks_parses() {
         .into_iter()
         .map(|message| CompactBlock::decode(message).expect("a CompactBlock"))
         .collect();
-    assert_eq!(blocks.len() as u64, BLOCKS, "part of the range is missing");
+    // Exactly the heights asked for, once each and in the rising order the
+    // protocol returns them in. A count alone would pass a server that
+    // answered with one block forty times.
+    let heights: Vec<u64> = blocks.iter().map(|block| block.height).collect();
+    let wanted: Vec<u64> = (last + 1 - BLOCKS..=last).collect();
+    assert_eq!(
+        heights, wanted,
+        "the server returned other blocks than the range asked for"
+    );
 
     // Old blocks always parse, so without this a server stalled at an upgrade
     // would pass on exactly the day this exists to fail.
