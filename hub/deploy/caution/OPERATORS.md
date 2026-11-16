@@ -295,8 +295,11 @@ Hand that string to each shim operator; they bake it in with `--hub-nym`. There 
 no discovery mechanism — the handoff is a human message, which is a deliberate
 simplification of the one-hub design.
 
-`/healthz` answers `200 ok` for liveness. Nothing exposes queue depth, batch size,
-or counts: those would be an oracle for the anonymity-set size.
+`/healthz` answers `200 ok` while the hub trusts its chain tip, and `503 tip
+stale` while it would refuse a send as `tip_stale`: from a start until the tip
+warm-up ends, and once no node has reported a new block for 5 minutes. Nothing
+exposes queue depth, batch size, or counts: those would be an oracle for the
+anonymity-set size.
 
 ### Is the hub actually reachable? Check `/nym-status`, not the other two
 
@@ -308,7 +311,8 @@ curl https://<hub-domain>/nym-status
 **`/nym-address` and `/healthz` cannot tell you this, by design.** The address is
 deliberately KEPT when the mixnet client dies — shims are baked against it, and it
 comes back on rebuild — so `/nym-address` answers 200 whether or not the hub can
-currently receive anything, and `/healthz` only says the process is alive.
+currently receive anything, and `/healthz` follows the chain tip, not the mixnet
+client.
 
 That combination is not hypothetical. On 2026-08-14 an attested hub answered both
 with 200 for hours while carrying no mixnet traffic at all; a shim and hub run
@@ -323,7 +327,8 @@ what identified the deployed hub rather than the network.
 | `consecutive_rebuild_failures` | growing — it is down and not recovering; at 60 it takes a NEW identity and every shim needs re-pointing |
 
 Poll `mixnet_connected`. It is the single field that says whether the system is
-carrying migrations.
+carrying migrations. Poll `/healthz` beside it: a hub with a stale tip refuses
+every migration it is carried.
 
 ## Clearnet mode: a documented, temporary step down (2026-08-17)
 
