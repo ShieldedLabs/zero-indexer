@@ -353,6 +353,26 @@ pub(crate) async fn send_transaction(
     // is configured. Moving the dial out of `handle` is what makes that true.
     if inspection.treat_as_migration() {
         if let Some(diversion) = diversion {
+            // A format NU7 retired can never be mined. The hub would hold it
+            // for a flush window and drop it, after this shim had told the
+            // wallet it was sent. Forwarding is no better: a transparent-only
+            // spend names the transaction it spends, which is why it is
+            // diverted at all. So the wallet gets the refusal a node would
+            // give, and neither the hub nor the operator sees the bytes.
+            //
+            // Reported once, like the unknown branch above: a line per refusal
+            // would tell the parent host which connection sent one.
+            if inspection.is_retired_version() {
+                static REPORTED: std::sync::atomic::AtomicBool =
+                    std::sync::atomic::AtomicBool::new(false);
+                if !REPORTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    tracing::warn!(
+                        target: "zis::classify",
+                        "RETIRED FORMAT: a V1 to V4 transaction that would have been diverted was refused, since no node accepts one after NU7. Reported once per process"
+                    );
+                }
+                return Ok(grpc_send_response(-1, RETIRED_VERSION));
+            }
             return divert(&diversion, tx_data).await;
         }
         // Forward-only: no hub configured, so behave exactly like the merged
@@ -477,6 +497,11 @@ async fn divert(
         }
     }
 }
+
+/// What a wallet is told when it sends a V1 to V4 transaction that would have
+/// been diverted. `error_code` -1, as for a hub refusal.
+const RETIRED_VERSION: &str =
+    "zero-indexer-shim: transaction versions before 5 are not valid since NU7 (ZIP 2003)";
 
 /// A synthesized unary `SendTransaction` response: the framed `SendResponse`
 /// message with a `grpc-status: 0` trailer, the exact shape a real indexer's
@@ -802,6 +827,18 @@ impl Inspection {
             // pass-through would be the leak.
             Inspection::Classified(evidence) => evidence.class.treat_as_migration(),
             Inspection::Failsafe { .. } => true,
+        }
+    }
+
+    /// True for a V1 to V4 transaction. ZIP 2003 retired V4 at NU7 and the
+    /// older formats went before it, so no node accepts one. A body that did
+    /// not parse has no version to judge and is `false`.
+    fn is_retired_version(&self) -> bool {
+        match self {
+            Inspection::Classified(evidence) => {
+                matches!(evidence.version.as_str(), "V1" | "V2" | "V3" | "V4")
+            }
+            Inspection::Failsafe { .. } => false,
         }
     }
 }
@@ -1409,5 +1446,23 @@ mod tests {
         wire.reverse();
         assert!(lookup_is_for_query(tx, &wire));
         assert!(!lookup_is_for_query(tx, &[0; 32]));
+    }
+
+    #[test]
+    fn only_a_parsed_v1_to_v4_transaction_is_a_retired_version() {
+        // A real V4 spend from mainnet, mined three days before NU7.
+        let v4 = include_bytes!("../tests/fixtures/mainnet_v4_transparent_spend.bin");
+        let (inspection, _) = inspect(&HeaderMap::new(), &framed(v4));
+        assert!(inspection.treat_as_migration(), "it must not be forwarded");
+        assert!(inspection.is_retired_version());
+
+        // The same shape in V6 is a TEX second leg and goes to the hub.
+        let (inspection, _) = inspect(&HeaderMap::new(), &framed(V6_TRANSPARENT_ONLY));
+        assert!(!inspection.is_retired_version());
+
+        // Bytes that do not parse have no version. They keep the fail-safe.
+        let (inspection, _) = inspect(&HeaderMap::new(), &framed(&[0xff; 64]));
+        assert!(inspection.treat_as_migration());
+        assert!(!inspection.is_retired_version());
     }
 }
