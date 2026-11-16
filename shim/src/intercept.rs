@@ -278,6 +278,20 @@ fn budget_spent() -> Response<ProxyBody> {
     )
 }
 
+/// Set once the hub has handed back a transaction on a consensus branch this
+/// build does not know, and not cleared while the process runs: the build
+/// cannot learn the branch. [`crate::proxy::SHIM_HEALTH`] reads it.
+///
+/// Set from a lookup reply and never from `SendTransaction`, although the same
+/// parse failure shows up there first. A wallet chooses the bytes it sends, so
+/// one request from anyone would turn `/healthz` red until a restart, and each
+/// restart of an attested shim spends a certificate issuance. A lookup reply
+/// that carries bytes comes from one of the hub's indexers, because the hub
+/// answers for a queued transaction with none. An indexer that lies to the hub
+/// can still set this. A wallet cannot.
+pub(crate) static BEHIND_THE_CHAIN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Handle a request routed to the `SendTransaction` method.
 ///
 /// The HTTP method is not checked here or by the caller, on purpose: see rule 3
@@ -628,6 +642,20 @@ pub(crate) async fn get_transaction(
             // both arrive here as `Lookup::Found`.
             if lookup_is_for_query(&data, &filter.hash) {
                 Ok(get_transaction_response(&data, height))
+            } else if classify_with_evidence(&data).is_unrecognised_branch() {
+                // Not a different transaction: one this build cannot read,
+                // because it does not know its consensus branch. Either the
+                // chain has moved past the build or one of the hub's indexers
+                // is lying. `/healthz` reports it. Logged once, for the reason
+                // `send_transaction` gives: at an upgrade every lookup of a
+                // mined transaction lands here.
+                if !BEHIND_THE_CHAIN.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    tracing::warn!(
+                        target: "zis::classify",
+                        "UNRECOGNISED CONSENSUS BRANCH: the hub returned a transaction on a consensus branch this build does not know, so lookups of such transactions answer NOT_FOUND. Reported once per process"
+                    );
+                }
+                Ok(grpc_error(GRPC_NOT_FOUND, &not_found_message(&filter.hash)))
             } else {
                 tracing::warn!(
                     target: "zis::classify",

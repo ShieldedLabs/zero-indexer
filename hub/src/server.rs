@@ -101,14 +101,14 @@ const MAX_CONCURRENT_HTTP_LOOKUPS: usize = 64;
 /// must know it to submit at all.
 const NYM_ADDRESS_PATH: &str = "/nym-address";
 
-/// Liveness: `GET /healthz`. Distinct from Caution's own
-/// `/.well-known/caution/health`, which the platform serves itself.
+/// `GET /healthz`: 200 while the hub trusts its chain tip, 503 while it does
+/// not. Caution's `/.well-known/caution/health` is the platform's own.
 const HEALTH_PATH: &str = "/healthz";
 
 /// Live mixnet status: `GET /nym-status`.
 ///
 /// Neither of the two endpoints above can answer "is this hub reachable over the
-/// mixnet right now". `/healthz` is process liveness, and `/nym-address` returns
+/// mixnet right now". `/healthz` follows the tip alone, and `/nym-address` returns
 /// a value that OUTLIVES the client that published it, deliberately — so both
 /// answered 200 for hours on a hub that was answering no mixnet traffic at all
 /// (measured 2026-08-14). This is the endpoint that distinguishes them.
@@ -706,6 +706,16 @@ async fn handle(
             _ => Ok(text(StatusCode::METHOD_NOT_ALLOWED, "GET only")),
         },
         HEALTH_PATH => match method {
+            // The same test `Hub::admit` makes, so the two cannot disagree: a
+            // hub that would refuse a send as `tip_stale` never says `ok`. It
+            // used to say `ok` whenever the process was up, and after NU7 a
+            // hub that never accepted a height did, while it refused every
+            // send. The verdict is on the status code because that is all an
+            // uptime monitor reads. It says nothing about the queue, and
+            // nothing a submitter is not told already.
+            Method::GET if hub.tip.is_stale() => {
+                Ok(text(StatusCode::SERVICE_UNAVAILABLE, "tip stale"))
+            }
             Method::GET => Ok(text(StatusCode::OK, "ok")),
             _ => Ok(text(StatusCode::METHOD_NOT_ALLOWED, "GET only")),
         },
