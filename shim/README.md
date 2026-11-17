@@ -145,7 +145,7 @@ The price is that a migration refused here may be sent through another server
 with no protection. A transaction version this build does not know fails
 differently and is still diverted. With no hub configured nothing is diverted,
 so nothing is refused
-(`a_transaction_on_an_unknown_branch_is_refused_and_reaches_neither_hub_nor_operator`).
+(`without_a_hub_an_unknown_branch_is_still_forwarded`).
 
 **What the widening closed.** A transaction must pay a fee, and unless the fee
 comes from another pool it comes out of Orchard, so most internal shuffling
