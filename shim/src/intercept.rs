@@ -16,8 +16,8 @@
 //!
 //! Fail-safe for privacy binds at every layer above the classifier. A
 //! `SendTransaction` the shim cannot read cleanly is treated as a migration and
-//! diverted, never handed to the operator; these cases are decided here rather
-//! than in the classifier:
+//! diverted or refused, never handed to the operator; these cases are decided
+//! here rather than in the classifier:
 //!
 //! * a body shorter than the 5-byte prefix,
 //! * the gRPC compression flag set, or a `grpc-encoding` other than `identity`,
@@ -343,8 +343,8 @@ pub(crate) async fn send_transaction(
 
     // A network upgrade looks exactly like garbage to a shim built before it, and
     // both fold into `treat_as_migration`. Separating them costs nothing and is
-    // the difference between "someone is sending junk" and "this shim is now
-    // diverting the whole network's traffic because it was never redeployed".
+    // the difference between "someone is sending junk" and "this shim can no
+    // longer read the network's traffic because it was never redeployed".
     //
     // Reported ONCE, not per request. At an upgrade every transaction on the
     // network takes this arm, so a line each would flood the log for as long as
@@ -356,7 +356,7 @@ pub(crate) async fn send_transaction(
         if !REPORTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
             tracing::warn!(
                 target: "zis::classify",
-                "UNRECOGNISED CONSENSUS BRANCH: this build cannot parse transactions for the active network upgrade, so every one of them classifies as a migration and is diverted to the hub. Redeploy against a zebra that knows this branch. Reported once per process"
+                "UNRECOGNISED CONSENSUS BRANCH: a transaction names a consensus branch this build does not know. With a hub it is refused, without one it is forwarded. If a network upgrade is live, every V5 and V6 transaction on its branch is one of these: redeploy against a zebra that knows the branch. Reported once per process"
             );
         }
     }
@@ -386,6 +386,19 @@ pub(crate) async fn send_transaction(
                     );
                 }
                 return Ok(grpc_send_response(-1, RETIRED_VERSION));
+            }
+            // A consensus branch this build does not know. If the bytes are
+            // wrong, no node takes them. If a network upgrade is live and this
+            // build predates it, every V5 and V6 transaction on the new branch
+            // looks like this one, ordinary payments included, and this shim
+            // would divert them all (Hornby review, 2026-08-19). The ordinary
+            // ones land in the hub's unverified lane, 16 entries a flush
+            // window, and over the mixnet the wallet is told "sent" before the
+            // hub can refuse. Forwarding bytes the shim could not read is the
+            // leak it exists to prevent. So the wallet gets an error it can
+            // act on. Reported once, above.
+            if inspection.is_unrecognised_branch() {
+                return Ok(grpc_send_response(-1, UNKNOWN_BRANCH));
             }
             return divert(&diversion, tx_data).await;
         }
@@ -439,9 +452,9 @@ async fn divert(
     //
     // A wallet never sends a zero-length transaction, so refusing costs nothing
     // real. This does NOT weaken REVIEW #5: an unparseable payload with actual
-    // bytes is still diverted and still published, because the shim diverted it
-    // for the same reason it could not read it and the node is the authority on
-    // validity. Zero bytes carry no such claim.
+    // bytes that reaches here is still diverted and published, because the
+    // shim diverted it for the same reason it could not read it and the node
+    // is the authority on validity. Zero bytes carry no such claim.
     if tx_data.is_empty() {
         tracing::warn!(
             target: "zis::classify",
@@ -516,6 +529,12 @@ async fn divert(
 /// been diverted. `error_code` -1, as for a hub refusal.
 const RETIRED_VERSION: &str =
     "zero-indexer-shim: transaction versions before 5 are not valid since NU7 (ZIP 2003)";
+
+/// What a wallet is told when it sends a transaction on a consensus branch
+/// this build does not know and a hub is configured. `error_code` -1, as for a
+/// hub refusal.
+const UNKNOWN_BRANCH: &str =
+    "zero-indexer-shim: this server does not know the transaction's consensus branch ID";
 
 /// A synthesized unary `SendTransaction` response: the framed `SendResponse`
 /// message with a `grpc-status: 0` trailer, the exact shape a real indexer's
@@ -974,7 +993,12 @@ fn inspect(headers: &HeaderMap, frame: &[u8]) -> (Inspection, Option<Bytes>) {
 /// transaction bytes that justifies writing them where the operator can read
 /// them.
 fn log_verdict(inspection: &Inspection, frame: &[u8]) {
-    let diverted_in_production = inspection.treat_as_migration();
+    // What a shim with a hub does with it. It diverts a migration, except the
+    // two kinds `send_transaction` refuses first, and the line must not claim
+    // a diversion that does not happen.
+    let diverted_in_production = inspection.treat_as_migration()
+        && !inspection.is_retired_version()
+        && !inspection.is_unrecognised_branch();
 
     match inspection {
         Inspection::Classified(evidence) => {

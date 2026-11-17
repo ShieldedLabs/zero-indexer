@@ -69,11 +69,11 @@
 //!   function of the bytes. Everything here can be exercised by a byte-vector
 //!   test.
 //! * **Fail-safe for privacy.** Anything that does not parse cleanly is
-//!   [`Class::Unparseable`], and the CALLER treats `Unparseable` exactly like
-//!   `Migration` (in the PoC it logs `MIGRATION-FAILSAFE`; in production it
-//!   diverts to the hub). The fail-safe policy deliberately lives at the call
-//!   site, so this module stays a plain classifier with no policy in it. Use
-//!   [`Class::treat_as_migration`] so that policy is written once.
+//!   [`Class::Unparseable`], and the CALLER treats `Unparseable` like
+//!   `Migration`, never as a pass-through (in the PoC it logs
+//!   `MIGRATION-FAILSAFE`; in production it diverts it, or refuses an unknown
+//!   branch). The fail-safe policy lives at the call site, so this module stays
+//!   a plain classifier. Use [`Class::treat_as_migration`] so it is written once.
 //!
 //! Scope note: this module classifies the INNER transaction bytes, that is the
 //! `data` field of a decoded `RawTransaction`. gRPC length-prefix framing,
@@ -194,19 +194,19 @@ impl Evidence {
     /// a bug: at a network upgrade, every transaction built for the new branch
     /// fails to parse against a shim compiled before it. `Unparseable` folds into
     /// `treat_as_migration`, which is the right default for garbage — but at an
-    /// upgrade boundary it silently turns every un-redeployed shim into a
+    /// upgrade boundary it would turn every un-redeployed shim into a
     /// divert-everything box, sending ordinary traffic to the hub (Hornby review,
     /// 2026-08-19).
     ///
-    /// Reporting it is free and changes no routing. Whether the shim should
-    /// then fail closed, keep diverting, or refuse to start is a decision with a
-    /// deadline set by the network, and this is the signal that decision needs.
+    /// The classifier only reports it. What follows is routing policy, in
+    /// `intercept::send_transaction`: a shim with a hub refuses the transaction,
+    /// and a shim without one forwards it as it forwards everything.
     ///
-    /// Matched on zebra's own wording: `Error::InvalidConsensusBranchId` maps to
-    /// `Parse("invalid consensus branch id")` in
-    /// `zebra-chain/src/serialization/error.rs`. The string is pinned by a test
-    /// below, built from real bytes, so an upstream rewording fails loudly here
-    /// rather than silently turning the signal off.
+    /// Matched on the parser's own wording. `zebra-chain` 15 reads a V5 or V6
+    /// header through `zcash_primitives`, which fails with "invalid consensus
+    /// branch id" and the id. The string is pinned by a test below, built from
+    /// real bytes, so an upstream rewording fails loudly here rather than
+    /// silently turning the signal off.
     pub fn is_unrecognised_branch(&self) -> bool {
         self.error
             .as_deref()
@@ -468,14 +468,15 @@ mod tests {
 mod branch_id_tests {
     use super::*;
 
-    /// A V5 transaction header naming a consensus branch that does not exist.
+    /// A V5 or V6 transaction header naming `branch`.
     ///
-    /// This is what every transaction on the network looks like to a shim built
-    /// before the upgrade that introduced the branch.
-    fn v5_with_branch(branch: u32) -> Vec<u8> {
+    /// With a branch that does not exist, this is what every V5 and V6
+    /// transaction looks like to a shim built before the upgrade that
+    /// introduced the branch.
+    fn header_with_branch(version: u32, version_group: u32, branch: u32) -> Vec<u8> {
         let mut raw = Vec::new();
-        raw.extend_from_slice(&0x8000_0005u32.to_le_bytes()); // fOverwintered | v5
-        raw.extend_from_slice(&0x26A7_270Au32.to_le_bytes()); // nVersionGroupId (v5)
+        raw.extend_from_slice(&(0x8000_0000 | version).to_le_bytes()); // fOverwintered | version
+        raw.extend_from_slice(&version_group.to_le_bytes()); // nVersionGroupId
         raw.extend_from_slice(&branch.to_le_bytes()); // nConsensusBranchId
         raw.extend_from_slice(&0u32.to_le_bytes()); // lock_time
         raw.extend_from_slice(&0u32.to_le_bytes()); // expiry_height
@@ -485,24 +486,25 @@ mod branch_id_tests {
 
     #[test]
     fn an_unknown_consensus_branch_is_reported_as_such() {
-        // Pins zebra's wording, which the matcher depends on
-        // (`zebra-chain/src/serialization/error.rs`: `InvalidConsensusBranchId`
-        // maps to `Parse("invalid consensus branch id")`). Measured, not assumed:
-        // the observed string is "parse error: invalid consensus branch id". An
+        // Pins the parser's wording, which the matcher depends on. Measured,
+        // not assumed: with `zebra-chain` 15 the observed string, for V5 and V6
+        // alike, is "io error: invalid consensus branch id 0xdeadbeef". An
         // upstream rewording must fail here rather than silently turning the
-        // signal off, because the signal is what says a shim has started
-        // diverting the entire network's traffic.
-        let ev = classify_with_evidence(&v5_with_branch(0xDEAD_BEEF));
-        assert_eq!(
-            ev.class,
-            Class::Unparseable,
-            "precondition: it does not parse"
-        );
-        assert!(
-            ev.is_unrecognised_branch(),
-            "an unknown branch must be distinguishable from garbage, got {:?}",
-            ev.error
-        );
+        // signal off, because a shim with a hub refuses on it.
+        for (version, version_group) in [(5, 0x26A7_270A), (6, 0xD884_B698)] {
+            let ev =
+                classify_with_evidence(&header_with_branch(version, version_group, 0xDEAD_BEEF));
+            assert_eq!(
+                ev.class,
+                Class::Unparseable,
+                "precondition: it does not parse"
+            );
+            assert!(
+                ev.is_unrecognised_branch(),
+                "an unknown branch must be distinguishable from garbage, got {:?}",
+                ev.error
+            );
+        }
     }
 
     #[test]

@@ -35,8 +35,8 @@ mod common;
 use common::{
     connect_h2, dead_addr, decode_raw_transaction, decode_send_response, get_transaction,
     get_transaction_filter, send_tx, send_tx_reply, spawn_counting_backend,
-    spawn_forward_only_shim, wire_hash, MAINNET_V4_SPEND, V6_IRONWOOD_ONLY, V6_MIGRATION,
-    V6_TRANSPARENT_ONLY,
+    spawn_forward_only_shim, v5_on_an_unknown_branch, wire_hash, MAINNET_V4_SPEND,
+    V6_IRONWOOD_ONLY, V6_MIGRATION, V6_TRANSPARENT_ONLY,
 };
 
 // -------------------------------------------------------------- mock hub
@@ -303,6 +303,74 @@ async fn without_a_hub_a_retired_format_is_still_forwarded() {
         decode_send_response(&body).error_message,
         "operator-answered"
     );
+}
+
+#[tokio::test]
+async fn a_transaction_on_an_unknown_branch_is_refused_and_reaches_neither_hub_nor_operator() {
+    // A consensus branch this build does not know: wrong bytes, or a network
+    // upgrade this build predates. A shim with a hub has to refuse it: the
+    // wallet hears an error, and bytes the shim could not read reach neither
+    // the hub nor the operator.
+    let hub_seen = Arc::new(Mutex::new(None));
+    let hub = spawn_mock_hub("unused", hub_seen.clone()).await;
+    let backend_conns = Arc::new(AtomicUsize::new(0));
+    let backend = spawn_counting_backend(backend_conns.clone()).await;
+    let shim = spawn_diverting_shim(backend, hub).await;
+
+    let mut sender = connect_h2(shim).await;
+    let body = send_tx(&mut sender, shim, &v5_on_an_unknown_branch()).await;
+
+    let resp = decode_send_response(&body);
+    assert_ne!(
+        resp.error_code, 0,
+        "the wallet was told a transaction this shim could not read was sent"
+    );
+    assert!(
+        hub_seen.lock().unwrap().is_none(),
+        "the hub was handed a transaction on a branch this build does not know"
+    );
+    assert_eq!(
+        backend_conns.load(Ordering::SeqCst),
+        0,
+        "bytes the shim could not read must not dial the operator"
+    );
+}
+
+#[tokio::test]
+async fn without_a_hub_an_unknown_branch_is_still_forwarded() {
+    // Forward-only mode diverts nothing. The operator's node may be newer than
+    // this shim, so it gets the transaction and decides, as it does without one.
+    let backend_conns = Arc::new(AtomicUsize::new(0));
+    let backend = spawn_counting_backend(backend_conns.clone()).await;
+    let shim = spawn_forward_only_shim(backend).await;
+
+    let mut sender = connect_h2(shim).await;
+    let body = send_tx(&mut sender, shim, &v5_on_an_unknown_branch()).await;
+
+    assert_eq!(
+        decode_send_response(&body).error_message,
+        "operator-answered"
+    );
+}
+
+#[tokio::test]
+async fn an_unparseable_body_is_diverted() {
+    // Only an unknown branch is to be refused. Junk the shim cannot parse, of
+    // a size the hub takes, goes to the hub and nowhere else (REVIEW #5).
+    let txid = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899";
+    let junk = [0xffu8; 64];
+    let hub_seen = Arc::new(Mutex::new(None));
+    let hub = spawn_mock_hub(txid, hub_seen.clone()).await;
+    let backend_conns = Arc::new(AtomicUsize::new(0));
+    let backend = spawn_counting_backend(backend_conns.clone()).await;
+    let shim = spawn_diverting_shim(backend, hub).await;
+
+    let mut sender = connect_h2(shim).await;
+    let body = send_tx(&mut sender, shim, &junk).await;
+
+    assert_eq!(decode_send_response(&body).error_code, 0);
+    assert_eq!(hub_seen.lock().unwrap().as_deref(), Some(&junk[..]));
+    assert_eq!(backend_conns.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
@@ -899,8 +967,8 @@ fn unframe_submit(body: &[u8]) -> Vec<u8> {
 ///
 /// Refusing costs nothing real: a wallet never sends a zero-length transaction.
 /// This does not weaken REVIEW #5 — an unparseable payload with actual bytes is
-/// still diverted and still published, which `an_unparseable_body_is_diverted`
-/// above covers.
+/// still diverted and still published, an unknown consensus branch aside, which
+/// `an_unparseable_body_is_diverted` above covers.
 #[tokio::test]
 async fn an_empty_transaction_is_refused_rather_than_diverted() {
     let txid = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899";

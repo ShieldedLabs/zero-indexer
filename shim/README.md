@@ -130,6 +130,23 @@ Mainnet and testnet are both past NU7. On a regtest chain that has not
 activated NU7, a shim with a hub refuses a V4 spend that chain would still
 mine.
 
+**Unknown consensus branch.** A V5 or V6 transaction that names a consensus
+branch this build does not know cannot be parsed. With a hub configured it is
+refused with a `SendResponse` error and reaches neither the hub nor the
+operator. To a shim built before a network upgrade, every such transaction on
+the new branch looks like this, ordinary payments included, and it would divert
+them all. The ordinary ones land in the hub's unverified lane, 16 entries a
+flush window, and over the mixnet the wallet is told it was sent before the hub
+can refuse. So a shim behind an upgrade refuses them until it is redeployed. A
+refused send does not turn `/healthz` red, because a wallet chooses those
+bytes: it answers `503` from the first lookup of a transaction mined on that
+branch, and on a shim that wallets use only to send, that lookup may not come.
+The price is that a migration refused here may be sent through another server
+with no protection. A transaction version this build does not know fails
+differently and is still diverted. With no hub configured nothing is diverted,
+so nothing is refused
+(`without_a_hub_an_unknown_branch_is_still_forwarded`).
+
 **What the widening closed.** A transaction must pay a fee, and unless the fee
 comes from another pool it comes out of Orchard, so most internal shuffling
 already showed `orchard_value_balance > 0` and the old exit predicate caught it.
@@ -179,7 +196,9 @@ are the accurate names for the predicates behind it.
 A false negative is a privacy leak, so anything the shim cannot read cleanly
 (unparseable bytes, a compressed gRPC frame, a truncated message, a protobuf
 that does not decode) is treated as a migration, logged as `MIGRATION-FAILSAFE`.
-The rule is written once, in `Class::treat_as_migration()`.
+The rule is written once, in `Class::treat_as_migration()`. Among unparseable
+transactions, one on an unknown consensus branch is refused by a shim with a
+hub and not diverted, see above.
 
 ### Which requests reach the classifier
 
