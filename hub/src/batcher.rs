@@ -1986,6 +1986,7 @@ mod tests {
                 transparent_outputs: 0,
                 has_child: false,
                 spends: Vec::new(),
+                shielded_cost: 0,
             }],
             TIP - 5,
             N,

@@ -36,6 +36,17 @@
 //!   `AlreadyMined` or `Rejected`, or on a later unanimous `Anchor` once the
 //!   tip is fresh and the observed height is above the mark. A keyless
 //!   `Anchor` on that path burns the payload hash.
+//! * **A shielded-cost budget per flush.** From NU7 a block holds 330 units
+//!   of ZIP 218 shielded cost. The queue keeps [`RESERVE`] of that for other
+//!   traffic, so one batch fits one block. Proven and transparent entries
+//!   share [`FLUSH_BUDGET`] less [`UNVERIFIED_FLUSH_BUDGET`]. Unverified
+//!   entries have [`UNVERIFIED_FLUSH_BUDGET`] alone, so free bytes cannot
+//!   spend the proven room. A batch in flight counts until its flush ends.
+//!   Past a cap, admission refuses `Full`.
+//! * **A holdoff after each relay.** After a non-empty flush, and from the
+//!   tip that made the hub ready, the next flush waits [`HOLDOFF_BLOCKS`].
+//!   Admission and requeue judge expiry at the later of the next boundary and
+//!   the end of that hold.
 //! * **Bytes are the budget, not entries.** Real Orchard migrations are 2 to
 //!   16 KB, so fixed-size slots would waste most of the budget and hand an
 //!   attacker a cheaper occupancy attack than the memory attack.
@@ -128,6 +139,25 @@ pub const MAX_BURNED_KEYS: usize = 1 << 20;
 /// waits on one.
 pub const VERIFY_SLOTS: usize = 3;
 
+/// The ZIP 218 shielded cost one block holds from NU7.
+pub const BLOCK_SHIELDED_BUDGET: u32 = 330;
+
+/// The shielded cost kept free in each block for traffic this hub does not
+/// relay.
+pub const RESERVE: u32 = 50;
+
+/// The shielded cost one flush may carry: the block less the reserve.
+pub const FLUSH_BUDGET: u32 = BLOCK_SHIELDED_BUDGET - RESERVE;
+
+/// The share of [`FLUSH_BUDGET`] for the unverified lane. The proven and
+/// transparent lanes share the rest.
+pub const UNVERIFIED_FLUSH_BUDGET: u32 = 32;
+
+/// Blocks a flush waits after the hold starts: the reorg allowance (10) plus
+/// the mining margin (4). `batcher` owns both constants, and a test there
+/// keeps this equal to their sum.
+pub const HOLDOFF_BLOCKS: u32 = 14;
+
 /// A lane's share of [`MAX_QUEUE_ENTRIES`].
 pub fn lane_cap(lane: Lane) -> usize {
     match lane {
@@ -135,6 +165,12 @@ pub fn lane_cap(lane: Lane) -> usize {
         Lane::Transparent => TRANSPARENT_LANE_ENTRIES,
         Lane::Unverified => UNVERIFIED_LANE_ENTRIES,
     }
+}
+
+/// Whether `lane` spends the unverified budget. Proven and transparent share
+/// the other one.
+fn is_unverified(lane: Lane) -> bool {
+    lane == Lane::Unverified
 }
 
 fn lane_index(lane: Lane) -> usize {
@@ -254,6 +290,14 @@ pub struct Entry {
     /// The outpoints a transparent-only spend consumes, so a parent that
     /// arrives or returns after it knows a leg already spends it.
     pub spends: Vec<OutPoint>,
+    /// The ZIP 218 shielded cost, from [`Inspected::shielded_cost`].
+    pub shielded_cost: u32,
+}
+
+/// What a drained entry still spends of the budget while its flush runs.
+struct InFlight {
+    cost: u32,
+    lane: Lane,
 }
 
 struct Inner {
@@ -269,6 +313,16 @@ struct Inner {
     /// observed height is above the mark. A later `Accepted` does not remove a
     /// key. A burn does.
     anchored: AnchorMarks,
+    /// The batch of the flush that runs now, by payload hash. Filled in
+    /// [`Queue::begin_flight`] and cleared when its [`FlightGuard`] drops.
+    in_flight: HashMap<[u8; 32], InFlight>,
+    /// The tip the holdoff counts from. `None` until the cadence binds the
+    /// queue and the tip is ready, or a flush starts.
+    hold_from: Option<u32>,
+    /// The cost cap of the proven and transparent lanes together.
+    proven_budget: u32,
+    /// The cost cap of the unverified lane.
+    unverified_budget: u32,
 }
 
 /// Keys an anchor mark tracks. A keyless entry uses the hash of its bytes.
@@ -320,6 +374,15 @@ impl Inner {
             self.bundle_keys.insert(*bundle_key, entry.key);
         }
         self.entries.insert(entry.key, entry);
+    }
+
+    /// Take every entry and release the counts they held.
+    fn drain(&mut self) -> Vec<Entry> {
+        let batch = self.entries.drain().map(|(_, entry)| entry).collect();
+        self.bytes = 0;
+        self.lanes = [0; 3];
+        self.bundle_keys.clear();
+        batch
     }
 
     /// Undo [`Self::insert`].
@@ -381,12 +444,59 @@ impl Inner {
     /// The cheap half of admission, run once before the proof check and again
     /// after it: everything that collapses or refuses without verifying.
     /// `Ok` carries the lane the entry would hold.
+    /// The height at which a flush publishes what is held now. `None` hold is
+    /// the boundary rule alone. While draining the final flush waits for the
+    /// hold and nothing else.
+    fn flush_at(&self, tip: u32, flush_interval: u32, draining: bool) -> u32 {
+        let next = next_flush_height(tip, flush_interval);
+        match self.hold_from {
+            None => next,
+            Some(from) => {
+                let hold_until = from.saturating_add(HOLDOFF_BLOCKS);
+                if draining {
+                    hold_until
+                } else {
+                    next.max(hold_until)
+                }
+            }
+        }
+    }
+
+    /// The shielded cost `lane`'s group holds now, resident and in flight,
+    /// with an entry of `cost` under `key` added. A key both resident and in
+    /// flight counts once.
+    fn group_cost(&self, lane: Lane, key: &[u8; 32], cost: u32) -> u32 {
+        let group = is_unverified(lane);
+        let resident = self
+            .entries
+            .values()
+            .filter(|entry| is_unverified(entry.lane) == group)
+            .fold(0u32, |sum, entry| sum.saturating_add(entry.shielded_cost));
+        let in_flight = self
+            .in_flight
+            .iter()
+            .filter(|(held, flight)| {
+                is_unverified(flight.lane) == group && !self.entries.contains_key(*held)
+            })
+            .fold(0u32, |sum, (_, flight)| sum.saturating_add(flight.cost));
+        let new = if self.in_flight.contains_key(key) {
+            0
+        } else {
+            cost
+        };
+        resident.saturating_add(in_flight).saturating_add(new)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn screen(
         &self,
         key: &[u8; 32],
         inspected: &Inspected,
         len: usize,
         max_bytes: usize,
+        tip: u32,
+        flush_interval: u32,
+        mining_margin: u32,
     ) -> Result<(Lane, Option<[u8; 32]>), Admission> {
         if self.entries.contains_key(key) {
             return Err(Admission::Duplicate {
@@ -426,6 +536,24 @@ impl Inner {
         } else {
             inspected.lane
         };
+
+        // Admission control: admit only if this entry provably survives the
+        // flush that would publish it, which is what makes the early-flush
+        // trigger unreachable rather than merely rate-limited (REVIEW #2). Run
+        // under the lock, so it sees a hold a flush stored meanwhile.
+        let at = self.flush_at(tip, flush_interval, false);
+        if !survives_flush_at(inspected.expiry, at, mining_margin) {
+            return Err(Admission::Refused(Refusal::ExpiryTooTight));
+        }
+
+        let cap = if is_unverified(lane) {
+            self.unverified_budget
+        } else {
+            self.proven_budget
+        };
+        if self.group_cost(lane, key, inspected.shielded_cost) > cap {
+            return Err(Admission::Refused(Refusal::Full));
+        }
 
         // Reserve the budget and insert BEFORE the caller acknowledges. An
         // acknowledgement is a promise; never emit one for an entry that is not
@@ -555,6 +683,10 @@ impl Queue {
                 bundle_keys: HashMap::new(),
                 burned: Burned::default(),
                 anchored: AnchorMarks::default(),
+                in_flight: HashMap::new(),
+                hold_from: None,
+                proven_budget: FLUSH_BUDGET - UNVERIFIED_FLUSH_BUDGET,
+                unverified_budget: UNVERIFIED_FLUSH_BUDGET,
             }),
             max_bytes,
             draining: std::sync::atomic::AtomicBool::new(false),
@@ -563,6 +695,29 @@ impl Queue {
             after_verify: None,
             revealed: None,
         }
+    }
+
+    /// The same queue with other cost caps, so a test can reach them.
+    #[cfg(test)]
+    pub(crate) fn with_lane_budgets(mut self, proven_budget: u32, unverified_budget: u32) -> Self {
+        let inner = self
+            .inner
+            .get_mut()
+            .unwrap_or_else(|poison| poison.into_inner());
+        inner.proven_budget = proven_budget;
+        inner.unverified_budget = unverified_budget;
+        self
+    }
+
+    /// Start the holdoff at `height`. The tip tracker calls this when it
+    /// becomes ready, while it still holds its own lock.
+    pub fn note_hold(&self, height: u32) {
+        self.lock().hold_from = Some(height);
+    }
+
+    /// The tip the holdoff counts from, `None` before the first.
+    pub fn hold_from(&self) -> Option<u32> {
+        self.lock().hold_from
     }
 
     /// Stop admitting, permanently. Called on the shutdown signal and BEFORE the
@@ -622,13 +777,6 @@ impl Queue {
         // admitted with no txid and no expiry, in the unverified lane.
         let inspected = admission::inspect(tx_bytes);
 
-        // Admission control: admit only if this entry provably survives the next
-        // scheduled flush, which is what makes the early-flush trigger
-        // unreachable rather than merely rate-limited (REVIEW #2).
-        if !survives_next_flush(inspected.expiry, tip, flush_interval, mining_margin) {
-            return Admission::Refused(Refusal::ExpiryTooTight);
-        }
-
         // A copy of a mined transaction: its proofs verify, and it can never be
         // mined again. Checked before the queue's lock, and before any proof.
         if self
@@ -641,12 +789,17 @@ impl Queue {
 
         let key: [u8; 32] = Sha256::digest(tx_bytes).into();
 
-        // First look: a duplicate, a burned proof or a full lane is answered
-        // before any proof is verified.
-        if let Err(decided) = self
-            .lock()
-            .screen(&key, &inspected, tx_bytes.len(), self.max_bytes)
-        {
+        // First look: a duplicate, a burned proof, a tight expiry or a full
+        // lane is answered before any proof is verified.
+        if let Err(decided) = self.lock().screen(
+            &key,
+            &inspected,
+            tx_bytes.len(),
+            self.max_bytes,
+            tip,
+            flush_interval,
+            mining_margin,
+        ) {
             return decided;
         }
 
@@ -676,7 +829,15 @@ impl Queue {
         if self.is_draining() {
             return Admission::Refused(Refusal::Draining);
         }
-        let (lane, parent) = match inner.screen(&key, &inspected, tx_bytes.len(), self.max_bytes) {
+        let (lane, parent) = match inner.screen(
+            &key,
+            &inspected,
+            tx_bytes.len(),
+            self.max_bytes,
+            tip,
+            flush_interval,
+            mining_margin,
+        ) {
             Ok(placed) => placed,
             Err(decided) => return decided,
         };
@@ -696,6 +857,7 @@ impl Queue {
             transparent_outputs: inspected.transparent_outputs,
             has_child: false,
             spends: inspected.spends,
+            shielded_cost: inspected.shielded_cost,
         });
 
         Admission::Admitted { txid }
@@ -723,15 +885,53 @@ impl Queue {
     /// neither is sorting by any key.
     pub fn drain_shuffled(&self) -> Vec<Entry> {
         let mut inner = self.lock();
-
-        let mut batch: Vec<Entry> = inner.entries.drain().map(|(_, entry)| entry).collect();
-        inner.bytes = 0;
-        inner.lanes = [0; 3];
-        inner.bundle_keys.clear();
+        let mut batch = inner.drain();
         drop(inner);
 
         batch.shuffle(&mut rand::rng());
         batch
+    }
+
+    /// [`drain_shuffled`](Self::drain_shuffled) for a flush. In the same
+    /// critical section as the drain, a non-empty batch starts the holdoff at
+    /// `hold_at` and counts against the budget until the returned guard
+    /// drops. An empty batch changes nothing.
+    pub fn begin_flight(&self, hold_at: u32) -> (Vec<Entry>, FlightGuard<'_>) {
+        let mut inner = self.lock();
+        let mut batch = inner.drain();
+        let armed = !batch.is_empty();
+        if armed {
+            inner.hold_from = Some(hold_at);
+            for entry in &batch {
+                inner.in_flight.insert(
+                    entry.key,
+                    InFlight {
+                        cost: entry.shielded_cost,
+                        lane: entry.lane,
+                    },
+                );
+            }
+        }
+        drop(inner);
+
+        batch.shuffle(&mut rand::rng());
+        (batch, FlightGuard { queue: self, armed })
+    }
+
+    /// Remove each entry that a flush at `at` cannot get mined in time, and
+    /// return how many. Run before the final flush.
+    pub fn drop_expiring(&self, at: u32, mining_margin: u32) -> usize {
+        let mut inner = self.lock();
+        let doomed: Vec<[u8; 32]> = inner
+            .entries
+            .values()
+            .filter(|entry| !survives_flush_at(entry.expiry, at, mining_margin))
+            .map(|entry| entry.key)
+            .collect();
+        for key in &doomed {
+            inner.remove(key);
+        }
+        doomed.len()
     }
 
     /// Burn bundle keys from a unanimous `AlreadyMined` or `Rejected`.
@@ -816,6 +1016,7 @@ impl Queue {
         mining_margin: u32,
     ) -> Requeued {
         let mut inner = self.lock();
+        let at = inner.flush_at(tip, flush_interval, self.is_draining());
 
         let mut out = Requeued::default();
         for mut entry in entries {
@@ -843,7 +1044,7 @@ impl Queue {
             // Expiry ends a tight one. The attempt count ends the rest: a ZIP 318
             // migration expires a month or more out, and a payload that does not
             // parse has no expiry.
-            if !survives_next_flush(entry.expiry, tip, flush_interval, mining_margin) {
+            if !survives_flush_at(entry.expiry, at, mining_margin) {
                 out.dropped_expired += 1;
                 continue;
             }
@@ -917,6 +1118,21 @@ impl Queue {
     }
 }
 
+/// Holds a flush's batch against the budget. Dropping it clears the flight,
+/// also when the `flush` future is dropped part way.
+pub struct FlightGuard<'a> {
+    queue: &'a Queue,
+    armed: bool,
+}
+
+impl Drop for FlightGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.queue.lock().in_flight.clear();
+        }
+    }
+}
+
 impl Default for Queue {
     fn default() -> Self {
         Self::new()
@@ -952,12 +1168,19 @@ pub fn survives_next_flush(
     flush_interval: u32,
     mining_margin: u32,
 ) -> bool {
+    survives_flush_at(
+        expiry,
+        next_flush_height(tip, flush_interval),
+        mining_margin,
+    )
+}
+
+/// Whether an entry published at height `at` gets `mining_margin` blocks to
+/// be mined before it expires. `None` never expires.
+pub fn survives_flush_at(expiry: Option<u32>, at: u32, mining_margin: u32) -> bool {
     match expiry {
         None => true,
-        Some(expiry) => {
-            let deadline = next_flush_height(tip, flush_interval).saturating_add(mining_margin);
-            expiry >= deadline
-        }
+        Some(expiry) => expiry >= at.saturating_add(mining_margin),
     }
 }
 
@@ -1176,6 +1399,7 @@ mod tests {
             transparent_outputs: 0,
             has_child: false,
             spends: Vec::new(),
+            shielded_cost: 0,
         });
         assert_eq!(
             q.admit(PROVEN_A_RESIGNED, 100, N, MARGIN),
@@ -1253,6 +1477,7 @@ mod tests {
             transparent_outputs: 0,
             has_child: false,
             spends: Vec::new(),
+            shielded_cost: 0,
         };
         q.note_anchor([&entry], 100);
         let beside = Entry {
@@ -1285,6 +1510,7 @@ mod tests {
             transparent_outputs: 0,
             has_child: false,
             spends: Vec::new(),
+            shielded_cost: 0,
         };
         q.note_anchor([&entry], 100);
         assert!(!q.anchor_due(&entry, 100, true));
@@ -2021,6 +2247,7 @@ mod tests {
             transparent_outputs: 0,
             has_child: false,
             spends: Vec::new(),
+            shielded_cost: 0,
         };
 
         // Tip 200 is past the entry's expiry of 150, so no future flush can
@@ -2068,6 +2295,191 @@ mod tests {
             "a no-expiry payload must still stop being retried"
         );
         assert!(q.is_empty(), "and it must actually be gone");
+    }
+
+    /// The shim's transparent-only fixture with its `nExpiryHeight` set. It
+    /// parses, carries no proof, and costs nothing.
+    fn expiring_at(expiry: u32) -> Vec<u8> {
+        let mut bytes = TRANSPARENT_ONLY.to_vec();
+        bytes[16..20].copy_from_slice(&expiry.to_le_bytes());
+        bytes
+    }
+
+    fn cost(bytes: &[u8]) -> u32 {
+        admission::inspect(bytes).shielded_cost
+    }
+
+    #[test]
+    fn admission_refuses_full_when_the_flush_budget_is_spent() {
+        let q = Queue::new().with_lane_budgets(cost(V6_ORCHARD_ONLY), UNVERIFIED_FLUSH_BUDGET);
+        assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
+        assert_eq!(
+            q.admit(PROVEN_B, 100, N, MARGIN),
+            Admission::Refused(Refusal::Full)
+        );
+        assert_eq!(q.len(), 1);
+    }
+
+    #[test]
+    fn the_flight_counts_toward_the_budget_until_it_ends() {
+        let q = Queue::new().with_lane_budgets(cost(V6_ORCHARD_ONLY), UNVERIFIED_FLUSH_BUDGET);
+        assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
+        let (batch, flight) = q.begin_flight(100);
+        assert_eq!(batch.len(), 1);
+        assert_eq!(
+            q.admit(PROVEN_B, 100, N, MARGIN),
+            Admission::Refused(Refusal::Full)
+        );
+        drop(flight);
+        assert!(admitted(q.admit(PROVEN_B, 100, N, MARGIN)));
+    }
+
+    #[test]
+    fn a_resend_of_bytes_in_flight_counts_once() {
+        let q = Queue::new().with_lane_budgets(cost(V6_ORCHARD_ONLY), UNVERIFIED_FLUSH_BUDGET);
+        assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
+        let (_batch, _flight) = q.begin_flight(100);
+        assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
+        assert_eq!(
+            q.admit(PROVEN_B, 100, N, MARGIN),
+            Admission::Refused(Refusal::Full)
+        );
+    }
+
+    #[test]
+    fn junk_costs_nothing_toward_the_budget() {
+        let q = Queue::new().with_lane_budgets(cost(V6_ORCHARD_ONLY), UNVERIFIED_FLUSH_BUDGET);
+        for i in 0..UNVERIFIED_LANE_ENTRIES {
+            assert!(admitted(q.admit(&distinct(i as u32), 100, N, MARGIN)));
+        }
+        assert!(admitted(q.admit(TRANSPARENT_ONLY, 100, N, MARGIN)));
+        assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
+    }
+
+    #[test]
+    fn an_unverified_cost_does_not_spend_the_proven_budget() {
+        // A transparent input keeps a bundle out of the proven lane, and the
+        // bytes still parse, so they carry the bundle's cost.
+        let a = admission::tests::with_transparent_input(V6_ORCHARD_ONLY);
+        let b = admission::tests::with_transparent_input(PROVEN_B);
+        let q = Queue::new().with_lane_budgets(FLUSH_BUDGET - UNVERIFIED_FLUSH_BUDGET, cost(&a));
+        assert!(admitted(q.admit(&a, 100, N, MARGIN)));
+        assert_eq!(
+            q.admit(&b, 100, N, MARGIN),
+            Admission::Refused(Refusal::Full),
+            "the unverified budget is spent"
+        );
+        assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
+    }
+
+    #[test]
+    fn a_cost_above_the_budget_is_full_on_an_empty_queue() {
+        let q = Queue::new().with_lane_budgets(0, UNVERIFIED_FLUSH_BUDGET);
+        assert_eq!(
+            q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN),
+            Admission::Refused(Refusal::Full)
+        );
+        assert!(q.is_empty());
+    }
+
+    #[test]
+    fn dropping_the_flight_guard_frees_the_budget() {
+        let q = Queue::new().with_lane_budgets(cost(V6_ORCHARD_ONLY), UNVERIFIED_FLUSH_BUDGET);
+        assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
+        {
+            let (_batch, _flight) = q.begin_flight(100);
+            assert!(!q.lock().in_flight.is_empty());
+        }
+        assert!(q.lock().in_flight.is_empty());
+        assert!(admitted(q.admit(PROVEN_B, 100, N, MARGIN)));
+    }
+
+    #[test]
+    fn an_empty_flight_leaves_the_hold_and_the_budget_alone() {
+        let q = Queue::new();
+        q.note_hold(90);
+        let (batch, _flight) = q.begin_flight(100);
+        assert!(batch.is_empty());
+        assert_eq!(q.hold_from(), Some(90));
+        assert!(q.lock().in_flight.is_empty());
+    }
+
+    #[test]
+    fn admission_judges_expiry_at_the_end_of_the_hold() {
+        // Tip 119: the next boundary is 120, so 124 is enough without a hold.
+        // A hold from 119 ends at 133, and the deadline is 137.
+        let q = Queue::new();
+        assert!(admitted(q.admit(&expiring_at(124), 119, N, MARGIN)));
+        let q = Queue::new();
+        q.note_hold(119);
+        assert_eq!(
+            q.admit(&expiring_at(136), 119, N, MARGIN),
+            Admission::Refused(Refusal::ExpiryTooTight)
+        );
+        assert!(admitted(q.admit(&expiring_at(137), 119, N, MARGIN)));
+    }
+
+    #[test]
+    fn admission_rechecks_the_hold_under_the_insert_lock() {
+        // The first look sees a hold from 100: the deadline is
+        // max(120, 114) + 4 = 124, and 124 passes. A flush stores a hold from
+        // 120 while the admission is between its two looks. The second look
+        // sees max(120, 134) + 4 = 138, and refuses.
+        let verified = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let held = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let mut q = Queue::new();
+        q.after_verify = Some(Box::new({
+            let (verified, held) = (verified.clone(), held.clone());
+            move || {
+                verified.wait();
+                held.wait();
+            }
+        }));
+        q.note_hold(100);
+        let tx = expiring_at(124);
+        let admission = std::thread::scope(|s| {
+            let admitting = s.spawn(|| q.admit(&tx, 100, N, MARGIN));
+            verified.wait();
+            q.note_hold(120);
+            held.wait();
+            admitting.join().expect("admission thread")
+        });
+        assert_eq!(admission, Admission::Refused(Refusal::ExpiryTooTight));
+        assert!(q.is_empty());
+    }
+
+    #[test]
+    fn requeue_judges_expiry_at_the_end_of_the_hold_this_relay_starts() {
+        // A flush at 119 starts a hold that ends at 133. Expiry 125 survives
+        // the boundary at 120 (124) and misses 133 + 4.
+        let q = Queue::new();
+        assert!(admitted(q.admit(&expiring_at(125), 100, N, MARGIN)));
+        let (batch, _flight) = q.begin_flight(119);
+        let out = q.requeue(batch, 119, N, MARGIN);
+        assert_eq!(out.dropped_expired, 1);
+        assert!(q.is_empty());
+    }
+
+    #[test]
+    fn a_draining_requeue_judges_at_the_end_of_the_hold_alone() {
+        // Tip 100: the boundary is 120, the hold from 100 ends at 114. The
+        // final flush waits for the hold only, so 118 is enough.
+        let q = Queue::new();
+        assert!(admitted(q.admit(&expiring_at(124), 100, N, MARGIN)));
+        let (batch, _flight) = q.begin_flight(100);
+        q.begin_draining();
+        let out = q.requeue(batch, 100, N, MARGIN);
+        assert_eq!(out.held, 1);
+    }
+
+    #[test]
+    fn drop_expiring_removes_what_misses_the_margin() {
+        let q = Queue::new();
+        assert!(admitted(q.admit(&expiring_at(124), 100, N, MARGIN)));
+        assert!(admitted(q.admit(&junk(1), 100, N, MARGIN)));
+        assert_eq!(q.drop_expiring(120, MARGIN), 0);
+        assert_eq!(q.drop_expiring(121, MARGIN), 1);
+        assert_eq!(q.len(), 1);
     }
 
     #[test]
