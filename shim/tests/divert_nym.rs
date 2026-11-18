@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
-use zaino_proto::proto::service::TxFilter;
+use zero_indexer_proto::service::TxFilter;
 use zeroize::Zeroizing;
 
 use zero_indexer_shim::intercept::Diversion;
@@ -552,7 +552,7 @@ async fn a_malformed_filter_is_rejected_locally_and_never_framed() {
         &mut sender,
         shim,
         TxFilter {
-            block: Some(zaino_proto::proto::service::BlockId {
+            block: Some(zero_indexer_proto::service::BlockId {
                 height: 100,
                 hash: Vec::new(),
             }),

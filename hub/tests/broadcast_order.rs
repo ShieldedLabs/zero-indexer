@@ -30,7 +30,7 @@ use hyper::{HeaderMap, Request, Response};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use prost::Message;
 use tokio::net::TcpListener;
-use zaino_proto::proto::service::{RawTransaction, SendResponse};
+use zero_indexer_proto::service::{RawTransaction, SendResponse};
 
 use zero_indexer_hub::chain::{ChainClient, Publish};
 

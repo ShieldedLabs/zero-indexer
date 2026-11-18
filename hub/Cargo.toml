@@ -65,10 +65,7 @@ rand010 = { package = "rand", version = "0.10" }
 zcash_protocol = "0.11"
 
 # CompactTxStreamer types for the indexer hop (SendTransaction, GetLightdInfo).
-# default-features = false is REQUIRED, not tidiness: the default "heavy" feature
-# pulls a SECOND zebra-chain from crates.io alongside the pin above, and its
-# build.rs regenerates the committed protos whenever protoc is reachable.
-zaino-proto = { version = "=0.6.0", default-features = false }
+zero-indexer-proto = { path = "../proto" }
 prost = "0.14"
 
 clap = { version = "4", features = ["derive", "env"] }

@@ -40,7 +40,7 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use prost::Message;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use zaino_proto::proto::service::{RawTransaction, SendResponse};
+use zero_indexer_proto::service::{RawTransaction, SendResponse};
 use zero_indexer_shim::proxy::SEND_TRANSACTION;
 use zero_indexer_shim::BoxError;
 

@@ -158,8 +158,7 @@ if ! reachable "$BACKEND"; then
     exit 0
 fi
 
-# The protos ship inside the zaino-proto crate that cargo already fetched.
-ZP_MANIFEST="$(cargo metadata --format-version 1 --locked | grep -o '"manifest_path":"[^"]*/zaino-proto-[^"/]*/Cargo.toml"' | head -1 | cut -d'"' -f4)"
-PROTO_DIR="$(dirname "$ZP_MANIFEST")/proto"
+# The protos live beside the shim, in zero-indexer-proto.
+PROTO_DIR="$(cd "$SHIM_DIR/../proto/proto" && pwd)"
 
 run_live

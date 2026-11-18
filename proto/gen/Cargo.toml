@@ -1,0 +1,10 @@
+[package]
+name = "zero-indexer-proto-gen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+tonic-prost-build = "=0.14.6"

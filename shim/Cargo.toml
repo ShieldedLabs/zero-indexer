@@ -49,12 +49,8 @@ too_many_arguments = "allow"
 # feature set is empty and V6/Ironwood support is unconditional in this release.
 zebra-chain = "=15.0.0"
 
-# default-features = false is load-bearing, for two independent reasons:
-#  1. The default "heavy" feature lets zaino-proto's build.rs find protoc via
-#     `which` and regenerate its committed src/proto/*.rs at build time.
-#  2. "heavy" also pulls zebra-state and a second zebra-chain from crates.io,
-#     a second, type-incompatible copy.
-zaino-proto = { version = "=0.6.0", default-features = false }
+# The lightwalletd wire types and the CompactTxStreamer stubs.
+zero-indexer-proto = { path = "../proto" }
 prost = "0.14"
 
 # Wipe framed transaction buffers on drop (wire.rs), the same discipline the
@@ -90,7 +86,7 @@ http-body-util = "0.1"
 bytes = "1"
 
 # gRPC-web for browser wallets (a browser cannot read HTTP/2 trailers). tonic is
-# already in the shipped graph through zaino-proto, so tonic-web adds one small
+# already in the shipped graph through zero-indexer-proto, so tonic-web adds one small
 # crate; tower-http answers the CORS preflight a browser sends first, and tower
 # stacks the two around the handler.
 tonic = { version = "0.14", default-features = false }
@@ -152,9 +148,9 @@ base64 = "0.22"
 
 # A REAL gRPC stack on both ends of the shim for tests/grpc_transparency.rs: a
 # tonic server standing in for lightwalletd or Zaino, and a tonic client
-# standing in for a wallet. Both use the vendored CompactTxStreamer codegen that
-# zaino-proto already ships, so nothing new enters the graph: zaino-proto itself
-# depends on tonic and tonic-prost, and tonic depends on tokio-stream.
+# standing in for a wallet. Both use the CompactTxStreamer stubs in
+# zero-indexer-proto, so nothing new enters the graph: that crate depends on
+# tonic and tonic-prost, and tonic depends on tokio-stream.
 tonic = "0.14"
 tokio-stream = "0.1"
 # A raw HTTP/2 server for tests/replay_charge.rs: an upstream that answers and

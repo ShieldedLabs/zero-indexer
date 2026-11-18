@@ -66,10 +66,7 @@ ensure_node_bin() {
 ensure_probe_bin() {
   if [ ! -x "$PROBE_BIN" ]; then
     log "building probe (release; first build takes several minutes)..."
-    # PROTOC must be unset: the probe links the shim/hub crates, whose
-    # zaino-proto dep would otherwise try to regenerate protos in the
-    # read-only vendored tree (see NYM_PLAN.md, build notes).
-    (cd "$PROBE_DIR" && env -u PROTOC -u protoc cargo build --release)
+    (cd "$PROBE_DIR" && cargo build --release)
   fi
 }
 

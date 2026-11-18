@@ -23,7 +23,7 @@ use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use prost::Message;
 use tokio::net::TcpListener;
-use zaino_proto::proto::service::SendResponse;
+use zero_indexer_proto::service::SendResponse;
 
 use common::{
     bounded, connect_h2, grpc_frame, grpc_web_call, spawn_counting_backend,
@@ -207,7 +207,7 @@ async fn a_pass_through_send_over_grpc_web_reaches_the_operator() {
     let backend = spawn_recording_backend(seen.clone()).await;
     let shim = spawn_forward_only_shim(backend).await;
 
-    let message = zaino_proto::proto::service::RawTransaction {
+    let message = zero_indexer_proto::service::RawTransaction {
         data: V6_IRONWOOD_ONLY.to_vec().into(),
         height: 0,
     }

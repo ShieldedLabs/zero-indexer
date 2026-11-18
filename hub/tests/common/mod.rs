@@ -22,7 +22,7 @@ use hyper::{HeaderMap, Request, Response};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use prost::Message;
 use tokio::net::TcpListener;
-use zaino_proto::proto::service::{RawTransaction, SendResponse, TxFilter};
+use zero_indexer_proto::service::{RawTransaction, SendResponse, TxFilter};
 
 const GET_TRANSACTION: &str = "/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetTransaction";
 
