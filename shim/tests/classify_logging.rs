@@ -30,7 +30,7 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use prost::Message;
 use tokio::net::{TcpListener, TcpStream};
 use tracing_subscriber::fmt::MakeWriter;
-use zaino_proto::proto::service::{RawTransaction, SendResponse};
+use zero_indexer_proto::service::{RawTransaction, SendResponse};
 use zero_indexer_shim::proxy::SEND_TRANSACTION;
 
 mod common;

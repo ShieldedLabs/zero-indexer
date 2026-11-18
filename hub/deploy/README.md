@@ -36,12 +36,11 @@ other.
 ## What differs from the shim recipe
 
 - **Binary name and entrypoint** (`zero-indexer-hub`, `/zero-indexer-hub`).
-- The context is the same shape as the shim's: `hub/` and `vendor/` at the
-  context root, with `zebra-chain` (`=15.0.0`) and `zaino-proto` (`=0.6.0`)
-  from crates.io, pinned by the committed `Cargo.lock`. The hub broadcasts
-  through an indexer's `CompactTxStreamer`, so it carries `zaino-proto` exactly
-  as the shim does, with the same `default-features = false` requirement and the
-  same no-protoc-in-the-image lock.
+- The context is the same shape as the shim's: `hub/`, `vendor/` and `proto/`
+  at the context root, with `zebra-chain` (`=15.0.0`) from crates.io, pinned by
+  the committed `Cargo.lock`. The hub broadcasts through an indexer's
+  `CompactTxStreamer`, so it carries `zero-indexer-proto` exactly as the shim
+  does.
 - Everything else (StageX bases, `SOURCE_DATE_EPOCH=1`, `codegen-units=1`,
   `crt-static`, `--build-id=none`, committed lockfile, no BuildKit cache mounts,
   no TLS stack, no rocksdb, no `libzcash_script`) is identical to the shim.
@@ -51,8 +50,8 @@ other.
 1. The `docker/dockerfile` frontend digest pinned on line 1 of `Containerfile`.
 2. The StageX base digests (`pallet-rust`, `core-busybox`).
 3. `RUSTFLAGS`, `SOURCE_DATE_EPOCH`, `CARGO_HOME`, `WORKDIR`.
-4. The committed `Cargo.lock`, which pins `zebra-chain` and `zaino-proto` from
-   crates.io by checksum. The vendored
+4. The committed `Cargo.lock`, which pins `zebra-chain` from crates.io by
+   checksum, and `zeronym/proto/src/`. The vendored
    `nym-upgrade-mode-check` (the crypto-common `[patch]` target) and the two
    `webpki-roots` copies (the eMudhra-distrust `[patch.crates-io]` targets) are
    archived too.

@@ -41,7 +41,7 @@ use http_body::{Body, Frame};
 use http_body_util::BodyExt;
 use prost::Message;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use zaino_proto::proto::service::{RawTransaction, SendResponse, TxFilter};
+use zero_indexer_proto::service::{RawTransaction, SendResponse, TxFilter};
 
 use crate::classify::{classify_with_evidence, Class, Evidence};
 use crate::hub::{HubTransport, Lookup, Submit};

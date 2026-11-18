@@ -37,9 +37,10 @@
 # Build context = the hub crate and its [patch] targets (assemble via assemble.sh):
 #   hub/                          the crate, including this file under deploy/
 #   vendor/                       the [patch] targets (see assemble.sh)
-# hub/ and vendor/ are siblings, so the hub's `../vendor/*` path references
-# resolve unchanged. No manifest is edited, anywhere. zebra-chain and
-# zaino-proto come from crates.io, pinned by the committed Cargo.lock.
+#   proto/                        zero-indexer-proto: Cargo.toml and src/
+# hub/, vendor/ and proto/ are siblings, so the hub's `../vendor/*` and
+# `../proto` path references resolve unchanged. No manifest is edited, anywhere.
+# zebra-chain comes from crates.io, pinned by the committed Cargo.lock.
 #
 # BUILD THIS FILE FROM INSIDE THE CONTEXT, not from the working tree:
 #   docker build -f "$CTX/hub/deploy/Containerfile" "$CTX" ...
@@ -61,12 +62,8 @@ ARG TARGET_ARCH="x86_64-unknown-linux-musl"
 # clang targeting x86_64-unknown-linux-musl, /usr/bin/cc, ar, mold, ld.lld,
 # /usr/include and /usr/lib/libc.a.
 #
-# DO NOT add stagex/user-protobuf. zaino-proto's build.rs regenerates its
-# committed src/proto/*.rs whenever protoc is reachable, and while
-# default-features = false already removes the `which::which("protoc")` branch,
-# the PROTOC env-var branch is NOT feature-gated. An image with no protoc in it
-# at all is the second, independent lock: nothing to find, nothing to
-# regenerate. Never set PROTOC either.
+# The image carries no protoc. zero-indexer-proto has no build script, so the
+# committed generated code in proto/src/ compiles as it is.
 FROM stagex/pallet-rust:1.96.0@sha256:abe9b95c93a5afa271f69fcd5eb18c8cd405fe5df6491a63c9418e3a170573dc AS pallet-rust
 FROM stagex/core-busybox:1.38.0@sha256:e4a30addc8939c8e232472de904d1d9e97fc2e735fca9a9701ce49db04c6c181 AS busybox
 
@@ -105,7 +102,7 @@ ENV SOURCE_DATE_EPOCH=1
 # reimplementation. It links clean without them. If a future dependency breaks
 # the link, restore the reference's flags before debugging anything else.
 
-# The context root holds hub/ and vendor/.
+# The context root holds hub/, vendor/ and proto/.
 COPY . ./
 
 WORKDIR /usr/src/app/hub
@@ -114,9 +111,7 @@ WORKDIR /usr/src/app/hub
 # --frozen below make the committed Cargo.lock authoritative: any drift is a
 # hard build failure rather than a silent re-resolution. That is what pins the
 # hub's orchard from crates.io (the hub is its own workspace and does not
-# inherit zebra's [patch.crates-io]), and it is also a free guard on the
-# zaino-proto feature set, since a regression to default features would change
-# the lock and fail the build.
+# inherit zebra's [patch.crates-io]).
 RUN cargo fetch --locked --target ${TARGET_ARCH}
 
 # No BuildKit cache mounts, anywhere. `docker build --no-cache` does NOT clear

@@ -48,9 +48,10 @@
 #   shim/                         the crate, including this file under deploy/
 #   vendor/nym-upgrade-mode-check/  the crypto-common [patch] target
 #   vendor/webpki-roots-0.2{4.0,5.4}/  the eMudhra-distrust [patch] targets
-# shim/ and vendor/ are siblings, so the shim's `../vendor/*` path references
-# resolve unchanged. No manifest is edited, anywhere. zebra-chain and
-# zaino-proto come from crates.io, pinned by the committed Cargo.lock.
+#   proto/                        zero-indexer-proto: Cargo.toml and src/
+# shim/, vendor/ and proto/ are siblings, so the shim's `../vendor/*` and
+# `../proto` path references resolve unchanged. No manifest is edited, anywhere.
+# zebra-chain comes from crates.io, pinned by the committed Cargo.lock.
 #
 # BUILD THIS FILE FROM INSIDE THE CONTEXT, not from the working tree:
 #   docker build -f "$CTX/shim/deploy/Containerfile" "$CTX" ...
@@ -92,13 +93,8 @@ ARG TARGET_ARCH
 ARG CARGO_FEATURES="mixnet-driver"
 SHELL ["/bin/sh", "-euo", "pipefail", "-c"]
 
-# DO NOT add stagex/user-protobuf here. zaino-proto's build.rs regenerates its
-# committed src/proto/*.rs whenever protoc is reachable, and while
-# default-features = false already removes the `which::which("protoc")` branch,
-# the PROTOC env-var branch of protoc_available() is NOT feature-gated. An image
-# with no protoc in it at all is the second, independent lock: nothing to find,
-# nothing to regenerate, and the committed protos compile verbatim. Never set
-# PROTOC either.
+# The image carries no protoc. zero-indexer-proto has no build script, so the
+# committed generated code in proto/src/ compiles as it is.
 
 WORKDIR /usr/src/app
 
@@ -123,7 +119,7 @@ ENV SOURCE_DATE_EPOCH=1
 # reimplementation. It links clean without them. If a future dependency breaks
 # the link, restore the reference's flags before debugging anything else.
 
-# The context root holds shim/ and vendor/.
+# The context root holds shim/, vendor/ and proto/.
 COPY . ./
 
 WORKDIR /usr/src/app/shim
@@ -132,9 +128,7 @@ WORKDIR /usr/src/app/shim
 # --frozen below make the committed Cargo.lock authoritative: any drift is a
 # hard build failure rather than a silent re-resolution. That is what pins the
 # shim's orchard 0.15.4 from crates.io (the shim is its own workspace and does
-# not inherit zebra's [patch.crates-io]), and it is also a free guard on the
-# zaino-proto feature set, since a regression to default features would change
-# the lock and fail the build.
+# not inherit zebra's [patch.crates-io]).
 RUN cargo fetch --locked --target ${TARGET_ARCH}
 
 # No BuildKit cache mounts, anywhere. `docker build --no-cache` does NOT clear

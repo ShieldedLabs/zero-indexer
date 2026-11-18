@@ -1,8 +1,8 @@
 #!/bin/sh
 # Assemble the zero-indexer-hub build context: a partial mirror of the zero repo
 # containing the hub plus the vendor/ crates its [patch] sections name.
-# zebra-chain and zaino-proto come from crates.io, pinned by the committed
-# Cargo.lock. Sibling of zeronym/shim/deploy/assemble.sh, with the same shape.
+# It also carries zero-indexer-proto, the path crate both binaries share.
+# zebra-chain comes from crates.io, pinned by the committed Cargo.lock. Sibling of zeronym/shim/deploy/assemble.sh, with the same shape.
 #
 # Everything comes out of `git archive HEAD`, never the working tree. Three
 # reasons, all of them load-bearing:
@@ -69,6 +69,14 @@ git -C "$ZERO_ROOT" archive HEAD -o "$STAGE/vendor.tar" \
 	zeronym/vendor/webpki-roots-0.24.0 \
 	zeronym/vendor/webpki-roots-0.25.4
 tar -xpf "$STAGE/vendor.tar" --strip-components=1 -C "$DEST"
+
+# zero-indexer-proto, which hub/Cargo.toml names as `../proto`. Only the manifest
+# and the committed generated code go in: the generator under proto/gen/ and
+# the .proto sources take no part in the build.
+git -C "$ZERO_ROOT" archive HEAD -o "$STAGE/proto.tar" \
+	zeronym/proto/Cargo.toml \
+	zeronym/proto/src
+tar -xpf "$STAGE/proto.tar" --strip-components=1 -C "$DEST"
 
 # Also not needed: a rust-toolchain.toml. The hub's own lockfile is
 # authoritative, and the pinned pallet-rust digest is the toolchain.

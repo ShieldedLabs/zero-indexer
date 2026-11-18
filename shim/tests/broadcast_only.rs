@@ -22,7 +22,7 @@ use hyper::body::Frame;
 use hyper::client::conn::http2 as client_h2;
 use prost::Message;
 use tokio_stream::StreamExt;
-use zaino_proto::proto::service::{RawTransaction, TxFilter};
+use zero_indexer_proto::service::{RawTransaction, TxFilter};
 
 use zero_indexer_shim::nym::MixnetStatus;
 use zero_indexer_shim::proxy::{

@@ -25,7 +25,7 @@ use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use prost::Message;
 use tokio::net::TcpListener;
-use zaino_proto::proto::service::{BlockId, TxFilter};
+use zero_indexer_proto::service::{BlockId, TxFilter};
 
 use zero_indexer_shim::hub::HubClient;
 use zero_indexer_shim::intercept::Diversion;
@@ -384,7 +384,7 @@ async fn a_grpc_web_migration_is_diverted_and_the_operator_is_never_connected() 
 
     // A browser wallet's send: gRPC-web text, the dialect the classifier would
     // never see if the translation sat anywhere but before routing.
-    let message = zaino_proto::proto::service::RawTransaction {
+    let message = zero_indexer_proto::service::RawTransaction {
         data: V6_MIGRATION.to_vec().into(),
         height: 0,
     }
@@ -404,7 +404,7 @@ async fn a_grpc_web_migration_is_diverted_and_the_operator_is_never_connected() 
         "{:?}",
         reply.trailers
     );
-    let resp = zaino_proto::proto::service::SendResponse::decode(reply.messages[0].as_ref())
+    let resp = zero_indexer_proto::service::SendResponse::decode(reply.messages[0].as_ref())
         .expect("a SendResponse");
     assert_eq!(resp.error_message, txid);
     assert_eq!(hub_seen.lock().unwrap().as_deref(), Some(V6_MIGRATION));
@@ -922,7 +922,7 @@ async fn broadcast_only_rejects_a_migration_sent_to_a_lower_case_path() {
     let backend = spawn_counting_backend(backend_conns.clone()).await;
     let shim = spawn_broadcast_only_diverting_shim(backend, hub).await;
 
-    let message = zaino_proto::proto::service::RawTransaction {
+    let message = zero_indexer_proto::service::RawTransaction {
         data: V6_MIGRATION.to_vec().into(),
         height: 0,
     }

@@ -181,32 +181,22 @@ HEAD` and strips the `zeronym/` level, so the context root holds:
 shim/                                  the crate, including deploy/
 vendor/nym-upgrade-mode-check/         the crypto-common [patch] target
 vendor/webpki-roots-0.2{4.0,5.4}/      the eMudhra-distrust [patch] targets
+proto/                                 zero-indexer-proto: Cargo.toml and src/
 ```
 
-`shim/` and `vendor/` are siblings, as in the repo, so the shim's `../vendor/*`
-path references resolve unchanged inside the image. **No manifest is edited
-anywhere.** `zebra-chain` (`=15.0.0`) and `zaino-proto` (`=0.6.0`) come from
-crates.io during `cargo fetch --locked`, pinned by the checksums in the committed
+`shim/`, `vendor/` and `proto/` are siblings, as in the repo, so the shim's
+`../vendor/*` and `../proto` path references resolve unchanged inside the image.
+**No manifest is edited anywhere.** `zebra-chain` (`=15.0.0`) comes from
+crates.io during `cargo fetch --locked`, pinned by the checksum in the committed
 `Cargo.lock`. The context layout is the one the shim keeps after it moves to its
 own repository, so the move leaves the in-image paths and the hash unchanged.
 
 ## Two traps worth naming
 
-**protoc must stay absent from the image.** `zaino-proto`'s `build.rs`
-regenerates its committed `src/proto/*.rs` whenever protoc is reachable.
-`default-features = false` in the shim's manifest removes the
-`which::which("protoc")` branch, but the `PROTOC` env-var branch of
-`protoc_available()` is *not* feature-gated. So the recipe deliberately does not
-copy `stagex/user-protobuf` (which the sibling zaino stage does) and never sets
-`PROTOC`. Two independent locks: nothing to find, nothing to regenerate. Do not
-add the protobuf pallet back while copy-pasting from the sibling recipe. Inside
-a container this would only alter a throwaway copy, but it silently changes what
-gets compiled, and therefore the hash.
-
-The `default-features = false` lock is the one that holds on a host with
-`protoc` on `PATH`, and the absent-protoc image is the second, independent one.
-Host test runs use `env -u PROTOC`, as `zeronym-guards.yml` does: `zaino-proto`
-0.6.0's `build.rs` treats a set-but-empty `PROTOC` as a protoc path.
+**The gRPC code is committed, generated code.** `zero-indexer-proto` has no
+build script and the image carries no protoc, so `proto/src/` compiles as it is.
+`zeronym/proto/gen` regenerates it on a developer machine, and the `proto` job
+in `zeronym-guards.yml` checks that the committed files match.
 
 **No cache mounts, ever, in this file.** See above. The sibling
 `overlay/Containerfile` uses them and is correspondingly unsuitable for proving
@@ -255,7 +245,7 @@ must never drift apart.
 
 **Changing the compiled source means re-baselining too**, and that is the more
 common case: any edit under `zeronym/shim/src/`, to `Cargo.toml` or
-`Cargo.lock` (including the `zebra-chain` and `zaino-proto` pins) moves the binary and therefore the published hash.
+`Cargo.lock` (including the `zebra-chain` pin), or under `zeronym/proto/src/`, moves the binary and therefore the published hash.
 Both 2026-08-01 re-baselines were of exactly that kind (two classifier rulings in
 one day), and both are written up below. Two traps the first one exposed, both
 worth knowing before you start.
@@ -1175,9 +1165,8 @@ If your hash differs, check these in order:
    Containerfile, `--no-cache` will not clear it and the build is no longer cold.
 3. **A `rust-toolchain.toml`.** There is none today, and adding one whose channel
    differs from `pallet-rust:1.96.0` makes rustup fetch a different compiler.
-4. **`stagex/user-protobuf` or a `PROTOC` env var.** Either one lets
-   `zaino-proto`'s `build.rs` regenerate its committed protos, silently changing
-   what gets compiled.
+4. **An edit under `zeronym/proto/src/`.** The generated gRPC code there is
+   compiled into the binary.
 5. **The frontend pin.** `# syntax=docker/dockerfile:1.26.0@sha256:ecfaec9e…`
    on line 1 of the Containerfile. A different frontend can emit different LLB.
 6. **Commit.** `git archive HEAD` means an unexpected `HEAD` silently builds

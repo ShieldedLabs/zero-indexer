@@ -31,7 +31,7 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use prost::Message;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Notify};
-use zaino_proto::proto::service::{RawTransaction, SendResponse};
+use zero_indexer_proto::service::{RawTransaction, SendResponse};
 use zero_indexer_shim::proxy::SEND_TRANSACTION;
 
 const GET_BLOCK_RANGE: &str = "/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetBlockRange";

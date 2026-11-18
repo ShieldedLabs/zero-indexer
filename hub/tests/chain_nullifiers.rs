@@ -17,12 +17,12 @@ use hyper::{HeaderMap, Request, Response};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use prost::Message;
 use tokio::net::TcpListener;
-use zaino_proto::proto::compact_formats::{CompactBlock, CompactOrchardAction, CompactTx};
-use zaino_proto::proto::service::{BlockRange, LightdInfo};
 use zero_indexer_hub::admission;
 use zero_indexer_hub::chain::ChainClient;
 use zero_indexer_hub::queue::{Admission, Queue, Refusal};
 use zero_indexer_hub::spent::{sync_from, sync_once, ChainNullifiers, RESYNC_DEPTH};
+use zero_indexer_proto::compact_formats::{CompactBlock, CompactOrchardAction, CompactTx};
+use zero_indexer_proto::service::{BlockRange, LightdInfo};
 
 const PROVEN_A: &[u8] = include_bytes!("fixtures/v6_proven_a.bin");
 const PROVEN_B: &[u8] = include_bytes!("fixtures/v6_proven_b.bin");
