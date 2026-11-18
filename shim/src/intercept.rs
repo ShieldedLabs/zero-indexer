@@ -961,10 +961,7 @@ fn inspect(headers: &HeaderMap, frame: &[u8]) -> (Inspection, Option<Bytes>) {
         // classifier ever sees, and the exact bytes the hub broadcasts.
         Ok(raw) => {
             let evidence = classify_with_evidence(&raw.data);
-            (
-                Inspection::Classified(evidence),
-                Some(Bytes::from(raw.data)),
-            )
+            (Inspection::Classified(evidence), Some(raw.data))
         }
         Err(err) => (
             Inspection::failsafe_with("RawTransaction decode failed", err.to_string()),

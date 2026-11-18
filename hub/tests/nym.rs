@@ -618,7 +618,7 @@ async fn excess_lookups_are_dropped_at_the_bound_not_parked() {
         "the bound must stop the flood reaching the indexer: {in_flight} of {FLOOD} dialled"
     );
     assert!(
-        in_flight >= 32 && in_flight <= 64,
+        (32..=64).contains(&in_flight),
         "in-flight lookups should plateau at the listener's bound (64), got {in_flight}"
     );
 

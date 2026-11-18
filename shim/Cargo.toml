@@ -40,6 +40,10 @@ mixnet-driver = ["dep:nym-sdk", "dep:ed25519-zebra-4"]
 # topology, so nym-topology stays out of the enclave build.
 mixnet-localnet = ["mixnet-driver", "dep:nym-topology"]
 
+# CI runs clippy with warnings as errors. This style lint stays off.
+[lints.clippy]
+too_many_arguments = "allow"
+
 [dependencies]
 # The real Zcash parser, pinned to the exact crates.io release. The default
 # feature set is empty and V6/Ironwood support is unconditional in this release.

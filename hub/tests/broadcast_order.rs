@@ -43,13 +43,13 @@ const BATCH: usize = 200;
 /// one input.
 fn tx(i: usize) -> Vec<u8> {
     let mut v = vec![0u8; 64];
-    v[0] = if i % 3 == 0 { 1 } else { 0 }; // 1 => the indexer rejects it
+    v[0] = if i.is_multiple_of(3) { 1 } else { 0 }; // 1 => the indexer rejects it
     v[1..5].copy_from_slice(&(i as u32).to_le_bytes());
     v
 }
 
 fn rejected(i: usize) -> bool {
-    i % 3 == 0
+    i.is_multiple_of(3)
 }
 
 /// A gRPC OK response carrying one length-prefixed message.
