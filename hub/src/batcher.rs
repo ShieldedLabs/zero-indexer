@@ -1777,9 +1777,11 @@ mod tests {
             () = &mut wait => {}
             _ = &mut flushing => panic!("the flush returned before the indexer was asked"),
         }
+        // The proofs are still in flight: a resend collapses and cannot
+        // replace the mark the returning original will keep.
         assert!(matches!(
             queue.admit(PROVEN, TIP, N, MARGIN),
-            crate::queue::Admission::Admitted { .. }
+            crate::queue::Admission::Duplicate { .. }
         ));
         flushing.await;
         assert_eq!(queue.len(), 1);

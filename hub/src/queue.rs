@@ -294,10 +294,13 @@ pub struct Entry {
     pub shielded_cost: u32,
 }
 
-/// What a drained entry still spends of the budget while its flush runs.
+/// What a drained entry still spends of the budget while its flush runs, and
+/// which proofs it still holds so a re-signing collapses as a duplicate.
 struct InFlight {
     cost: u32,
     lane: Lane,
+    bundle_keys: Vec<[u8; 32]>,
+    txid: Option<String>,
 }
 
 struct Inner {
@@ -419,7 +422,22 @@ impl Inner {
         }
     }
 
-    /// Whether any of these bundle keys is already held.
+    /// The txid of the entry that holds this bundle key, resident or still
+    /// in flight. `None` means nobody holds it; `Some(None)` means a keyless
+    /// or unparseable holder.
+    fn holder_txid(&self, bundle_key: &[u8; 32]) -> Option<Option<String>> {
+        if let Some(held) = self.bundle_keys.get(bundle_key) {
+            return Some(self.entries.get(held).and_then(|entry| entry.txid.clone()));
+        }
+        self.in_flight
+            .values()
+            .find(|flight| flight.bundle_keys.iter().any(|held| held == bundle_key))
+            .map(|flight| flight.txid.clone())
+    }
+
+    /// Whether any of these bundle keys is held by a resident entry. Used by
+    /// requeue: the returning batch is still in `in_flight`, so that map must
+    /// not count. Admission uses [`Self::holder_txid`] instead, which does.
     fn holds_any(&self, bundle_keys: &[[u8; 32]]) -> bool {
         bundle_keys
             .iter()
@@ -527,17 +545,16 @@ impl Inner {
                 txid: inspected.txid.clone(),
             });
         }
-        // Another signing of proofs already held. Collapsed like identical
-        // bytes: only one of them can be mined, and the held one will be
-        // published, so its txid is the answer.
-        if let Some(held) = inspected
+        // Another signing of proofs already held, including ones still in
+        // flight: only one of them can be mined, and the held one will be
+        // published, so its txid is the answer. The drain clears the resident
+        // index; the flight record keeps the keys until the guard drops.
+        if let Some(txid) = inspected
             .bundle_keys
             .iter()
-            .find_map(|bundle_key| self.bundle_keys.get(bundle_key))
+            .find_map(|bundle_key| self.holder_txid(bundle_key))
         {
-            return Err(Admission::Duplicate {
-                txid: self.entries.get(held).and_then(|entry| entry.txid.clone()),
-            });
+            return Err(Admission::Duplicate { txid });
         }
         let burned = if inspected.bundle_keys.is_empty() {
             self.burned.contains(key)
@@ -959,6 +976,8 @@ impl Queue {
                     InFlight {
                         cost: entry.shielded_cost,
                         lane: entry.lane,
+                        bundle_keys: entry.bundle_keys.clone(),
+                        txid: entry.txid.clone(),
                     },
                 );
             }
@@ -2390,14 +2409,47 @@ mod tests {
 
     #[test]
     fn a_resend_of_bytes_in_flight_counts_once() {
+        // Same bytes share the flight's proofs, so they collapse as a
+        // duplicate and the budget stays the one cost already in flight.
         let q = Queue::new().with_lane_budgets(cost(V6_ORCHARD_ONLY), UNVERIFIED_FLUSH_BUDGET);
         assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
+        let published = q
+            .lock()
+            .entries
+            .values()
+            .next()
+            .and_then(|e| e.txid.clone());
         let (_batch, _flight) = q.begin_flight(100, None);
-        assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
+        assert_eq!(
+            q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN),
+            Admission::Duplicate { txid: published }
+        );
         assert_eq!(
             q.admit(PROVEN_B, 100, N, MARGIN),
             Admission::Refused(Refusal::Full)
         );
+    }
+
+    #[test]
+    fn re_signing_a_proof_in_flight_buys_no_second_entry() {
+        // The flight still holds these proofs: a re-signing collapses onto
+        // the published txid and spends no budget.
+        let q = Queue::new().with_lane_budgets(cost(V6_ORCHARD_ONLY), UNVERIFIED_FLUSH_BUDGET);
+        assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
+        let published = q
+            .lock()
+            .entries
+            .values()
+            .next()
+            .and_then(|e| e.txid.clone());
+        let (_batch, flight) = q.begin_flight(100, None);
+        assert_eq!(
+            q.admit(PROVEN_A_RESIGNED, 100, N, MARGIN),
+            Admission::Duplicate { txid: published }
+        );
+        assert!(q.is_empty());
+        drop(flight);
+        assert!(admitted(q.admit(PROVEN_A_RESIGNED, 100, N, MARGIN)));
     }
 
     #[test]
