@@ -16,7 +16,7 @@ it is, and needs no `protoc`.
 
 ## Regenerate
 
-Install `protoc`, then run:
+Install `protoc` 36.2, the version the CI job pins, then run:
 
 ```sh
 cargo run --locked --manifest-path zeronym/proto/gen/Cargo.toml
