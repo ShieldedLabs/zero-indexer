@@ -67,6 +67,7 @@ async fn main() -> Result<(), BoxError> {
     };
     let revealed = Arc::new(spent::ChainNullifiers::new(chain.endpoint_count()));
     let queue = Arc::new(Queue::watching(revealed.clone()));
+    queue.set_schedule(params.flush_budget, params.hold_span());
     let tip = Arc::new(TipTracker::new(guard));
 
     tracing::info!(

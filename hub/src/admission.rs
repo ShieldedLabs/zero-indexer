@@ -259,6 +259,8 @@ fn shielded_cost(tx: &Transaction) -> u32 {
         .saturating_add(count(tx.sapling_outputs().count()))
         .saturating_add(count(tx.orchard_actions().count()))
         .saturating_add(count(tx.ironwood_actions().count()))
+        // v4 is refused and v5/v6 carry no JoinSplits, so this is 0 on
+        // everything this hub admits. The weight stays because ZIP 218 counts 2.
         .saturating_add(count(tx.joinsplit_count()).saturating_mul(2))
 }
 

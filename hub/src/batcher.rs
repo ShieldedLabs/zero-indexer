@@ -535,6 +535,7 @@ async fn run_with_poll_interval(
         mining_margin = params.mining_margin,
         "batching cadence started"
     );
+    queue.set_schedule(params.flush_budget, params.hold_span());
     tip.bind(queue.clone());
 
     let mut shutdown = std::pin::pin!(shutdown);
@@ -566,7 +567,12 @@ async fn run_with_poll_interval(
                 // First observation: adopt the current epoch without
                 // flushing, so a restart does not publish a partial batch
                 // off-cadence.
-                None => tip.record_flush_boundary(boundary),
+                None => {
+                    // On the queue before the tip, so an admit already past
+                    // its snapshot sees the spent epoch under the queue lock.
+                    queue.note_boundary(boundary);
+                    tip.record_flush_boundary(boundary);
+                }
                 // The holdoff waits on the cadence clock, as the spec's
                 // `isFlushDue` does, so it runs ahead while the tip is stale.
                 // A held boundary is not recorded: the first poll past the
@@ -666,7 +672,9 @@ pub async fn flush(
     // the tip during a flush, so blocks mined in flight are not counted.
     // It starts before any verdict: a relay can land while its answer is lost.
     let hold_at = tip.observed_height();
-    let (batch, flight) = queue.begin_flight(hold_at);
+    // The boundary the cadence just recorded. Spent here, under the drain
+    // lock, including when the batch is empty.
+    let (batch, flight) = queue.begin_flight(hold_at, tip.last_flush_boundary());
     let size = batch.len();
 
     if size == 0 {

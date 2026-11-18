@@ -319,6 +319,14 @@ struct Inner {
     /// The tip the holdoff counts from. `None` until the cadence binds the
     /// queue and the tip is ready, or a flush starts.
     hold_from: Option<u32>,
+    /// Blocks from `hold_from` until a flush may run. The schedule sets it;
+    /// [`HOLDOFF_BLOCKS`] is the value a queue built on its own uses.
+    hold_span: u32,
+    /// The highest flush boundary the cadence has spent. Admission judges
+    /// from here when it is above the tip copied before the proof check.
+    /// Requeue does not: an acknowledged entry is not dropped on a boundary
+    /// recorded ahead of the chain.
+    spent_boundary: Option<u32>,
     /// The cost cap of the proven and transparent lanes together.
     proven_budget: u32,
     /// The cost cap of the unverified lane.
@@ -446,13 +454,21 @@ impl Inner {
     /// `Ok` carries the lane the entry would hold.
     /// The height at which a flush publishes what is held now. `None` hold is
     /// the boundary rule alone. While draining the final flush waits for the
-    /// hold and nothing else.
-    fn flush_at(&self, tip: u32, flush_interval: u32, draining: bool) -> u32 {
+    /// hold and nothing else. `admission` raises the tip to a boundary this
+    /// queue has already spent, which is what a proof overlapping that flush
+    /// cannot see on the copy it was given.
+    fn flush_at(&self, tip: u32, flush_interval: u32, draining: bool, admission: bool) -> u32 {
+        let tip = if admission {
+            self.spent_boundary
+                .map_or(tip, |boundary| tip.max(boundary))
+        } else {
+            tip
+        };
         let next = next_flush_height(tip, flush_interval);
         match self.hold_from {
             None => next,
             Some(from) => {
-                let hold_until = from.saturating_add(HOLDOFF_BLOCKS);
+                let hold_until = from.saturating_add(self.hold_span);
                 if draining {
                     hold_until
                 } else {
@@ -460,6 +476,14 @@ impl Inner {
                 }
             }
         }
+    }
+
+    /// Remember a flush boundary the cadence will not publish again.
+    fn spend(&mut self, boundary: u32) {
+        self.spent_boundary = Some(match self.spent_boundary {
+            Some(had) => had.max(boundary),
+            None => boundary,
+        });
     }
 
     /// The shielded cost `lane`'s group holds now, resident and in flight,
@@ -540,8 +564,9 @@ impl Inner {
         // Admission control: admit only if this entry provably survives the
         // flush that would publish it, which is what makes the early-flush
         // trigger unreachable rather than merely rate-limited (REVIEW #2). Run
-        // under the lock, so it sees a hold a flush stored meanwhile.
-        let at = self.flush_at(tip, flush_interval, false);
+        // under the lock, so it sees a hold or a spent boundary a flush stored
+        // meanwhile.
+        let at = self.flush_at(tip, flush_interval, false, true);
         if !survives_flush_at(inspected.expiry, at, mining_margin) {
             return Err(Admission::Refused(Refusal::ExpiryTooTight));
         }
@@ -685,6 +710,8 @@ impl Queue {
                 anchored: AnchorMarks::default(),
                 in_flight: HashMap::new(),
                 hold_from: None,
+                hold_span: HOLDOFF_BLOCKS,
+                spent_boundary: None,
                 proven_budget: FLUSH_BUDGET - UNVERIFIED_FLUSH_BUDGET,
                 unverified_budget: UNVERIFIED_FLUSH_BUDGET,
             }),
@@ -713,6 +740,22 @@ impl Queue {
     /// becomes ready, while it still holds its own lock.
     pub fn note_hold(&self, height: u32) {
         self.lock().hold_from = Some(height);
+    }
+
+    /// The cadence has spent `boundary` and will not flush there again.
+    /// The first observation calls this on its own; a flush spends the same
+    /// boundary inside [`Self::begin_flight`], under the drain lock.
+    pub fn note_boundary(&self, boundary: u32) {
+        self.lock().spend(boundary);
+    }
+
+    /// Install the schedule admission actually enforces. `proven_budget` is
+    /// whatever of `flush_budget` the unverified lane does not take.
+    pub fn set_schedule(&self, flush_budget: u32, hold_span: u32) {
+        let mut inner = self.lock();
+        inner.hold_span = hold_span;
+        inner.unverified_budget = UNVERIFIED_FLUSH_BUDGET.min(flush_budget);
+        inner.proven_budget = flush_budget.saturating_sub(UNVERIFIED_FLUSH_BUDGET);
     }
 
     /// The tip the holdoff counts from, `None` before the first.
@@ -893,12 +936,20 @@ impl Queue {
     }
 
     /// [`drain_shuffled`](Self::drain_shuffled) for a flush. In the same
-    /// critical section as the drain, a non-empty batch starts the holdoff at
-    /// `hold_at` and counts against the budget until the returned guard
-    /// drops. An empty batch changes nothing.
-    pub fn begin_flight(&self, hold_at: u32) -> (Vec<Entry>, FlightGuard<'_>) {
+    /// critical section as the drain, `boundary` is spent even when the batch
+    /// is empty: the epoch is spent whether or not anything was held. A
+    /// non-empty batch also starts the holdoff at `hold_at` and counts
+    /// against the budget until the returned guard drops.
+    pub fn begin_flight(
+        &self,
+        hold_at: u32,
+        boundary: Option<u32>,
+    ) -> (Vec<Entry>, FlightGuard<'_>) {
         let mut inner = self.lock();
         let mut batch = inner.drain();
+        if let Some(boundary) = boundary {
+            inner.spend(boundary);
+        }
         let armed = !batch.is_empty();
         if armed {
             inner.hold_from = Some(hold_at);
@@ -1016,7 +1067,10 @@ impl Queue {
         mining_margin: u32,
     ) -> Requeued {
         let mut inner = self.lock();
-        let at = inner.flush_at(tip, flush_interval, self.is_draining());
+        // The observed tip, not the spent boundary. An entry already
+        // acknowledged is not dropped because the cadence recorded a
+        // boundary ahead of the chain.
+        let at = inner.flush_at(tip, flush_interval, self.is_draining(), false);
 
         let mut out = Requeued::default();
         for mut entry in entries {
@@ -2324,7 +2378,7 @@ mod tests {
     fn the_flight_counts_toward_the_budget_until_it_ends() {
         let q = Queue::new().with_lane_budgets(cost(V6_ORCHARD_ONLY), UNVERIFIED_FLUSH_BUDGET);
         assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
-        let (batch, flight) = q.begin_flight(100);
+        let (batch, flight) = q.begin_flight(100, None);
         assert_eq!(batch.len(), 1);
         assert_eq!(
             q.admit(PROVEN_B, 100, N, MARGIN),
@@ -2338,7 +2392,7 @@ mod tests {
     fn a_resend_of_bytes_in_flight_counts_once() {
         let q = Queue::new().with_lane_budgets(cost(V6_ORCHARD_ONLY), UNVERIFIED_FLUSH_BUDGET);
         assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
-        let (_batch, _flight) = q.begin_flight(100);
+        let (_batch, _flight) = q.begin_flight(100, None);
         assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
         assert_eq!(
             q.admit(PROVEN_B, 100, N, MARGIN),
@@ -2387,7 +2441,7 @@ mod tests {
         let q = Queue::new().with_lane_budgets(cost(V6_ORCHARD_ONLY), UNVERIFIED_FLUSH_BUDGET);
         assert!(admitted(q.admit(V6_ORCHARD_ONLY, 100, N, MARGIN)));
         {
-            let (_batch, _flight) = q.begin_flight(100);
+            let (_batch, _flight) = q.begin_flight(100, None);
             assert!(!q.lock().in_flight.is_empty());
         }
         assert!(q.lock().in_flight.is_empty());
@@ -2398,7 +2452,7 @@ mod tests {
     fn an_empty_flight_leaves_the_hold_and_the_budget_alone() {
         let q = Queue::new();
         q.note_hold(90);
-        let (batch, _flight) = q.begin_flight(100);
+        let (batch, _flight) = q.begin_flight(100, None);
         assert!(batch.is_empty());
         assert_eq!(q.hold_from(), Some(90));
         assert!(q.lock().in_flight.is_empty());
@@ -2454,7 +2508,7 @@ mod tests {
         // the boundary at 120 (124) and misses 133 + 4.
         let q = Queue::new();
         assert!(admitted(q.admit(&expiring_at(125), 100, N, MARGIN)));
-        let (batch, _flight) = q.begin_flight(119);
+        let (batch, _flight) = q.begin_flight(119, None);
         let out = q.requeue(batch, 119, N, MARGIN);
         assert_eq!(out.dropped_expired, 1);
         assert!(q.is_empty());
@@ -2462,14 +2516,88 @@ mod tests {
 
     #[test]
     fn a_draining_requeue_judges_at_the_end_of_the_hold_alone() {
-        // Tip 100: the boundary is 120, the hold from 100 ends at 114. The
-        // final flush waits for the hold only, so 118 is enough.
+        // Hold from 100 ends at 114. Draining judges there alone, so the
+        // deadline is 118. The next boundary is 120 and its deadline is 124,
+        // which drops both. These never pass admission at tip 100; they are
+        // already out with a flush.
         let q = Queue::new();
-        assert!(admitted(q.admit(&expiring_at(124), 100, N, MARGIN)));
-        let (batch, _flight) = q.begin_flight(100);
+        q.note_hold(100);
         q.begin_draining();
-        let out = q.requeue(batch, 100, N, MARGIN);
+        let out = q.requeue(vec![returning(1, 118), returning(2, 117)], 100, N, MARGIN);
         assert_eq!(out.held, 1);
+        assert_eq!(out.dropped_expired, 1);
+    }
+
+    fn returning(seed: u8, expiry: u32) -> Entry {
+        Entry {
+            key: [seed; 32],
+            txid: None,
+            expiry: Some(expiry),
+            tx_bytes: Zeroizing::new(vec![seed; 64]),
+            attempts: 0,
+            received_height: 100,
+            lane: Lane::Unverified,
+            bundle_keys: Vec::new(),
+            transparent_outputs: 0,
+            has_child: false,
+            spends: Vec::new(),
+            shielded_cost: 0,
+        }
+    }
+
+    #[test]
+    fn an_empty_flush_spends_its_boundary_before_the_second_look() {
+        // Tip 119, hold from 100: the first look's deadline is
+        // max(120, 114) + 4 = 124. An empty flush spends boundary 120 and
+        // does not move the hold. The second look judges at 120, whose next
+        // boundary is 140, and 124 misses it.
+        let verified = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let held = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let mut q = Queue::new();
+        q.after_verify = Some(Box::new({
+            let (verified, held) = (verified.clone(), held.clone());
+            move || {
+                verified.wait();
+                held.wait();
+            }
+        }));
+        q.note_hold(100);
+        let tx = expiring_at(124);
+        let admission = std::thread::scope(|s| {
+            let admitting = s.spawn(|| q.admit(&tx, 119, N, MARGIN));
+            verified.wait();
+            let (batch, _flight) = q.begin_flight(119, Some(120));
+            assert!(batch.is_empty(), "the flush held nothing");
+            assert_eq!(
+                q.hold_from(),
+                Some(100),
+                "an empty flush does not move the hold"
+            );
+            held.wait();
+            admitting.join().expect("admission thread")
+        });
+        assert_eq!(admission, Admission::Refused(Refusal::ExpiryTooTight));
+        assert!(q.is_empty());
+    }
+
+    #[test]
+    fn set_schedule_is_what_admission_enforces() {
+        // A budget of 32 leaves the proven cap at 0. A span of 20 from a hold
+        // at 101 ends at 121, so the deadline is 125. The const span of 14
+        // would still accept 124, and the const proven cap would still accept
+        // the fixture.
+        let q = Queue::new();
+        q.set_schedule(UNVERIFIED_FLUSH_BUDGET, 20);
+        q.note_hold(101);
+        assert_eq!(
+            q.admit(V6_ORCHARD_ONLY, 101, N, MARGIN),
+            Admission::Refused(Refusal::Full)
+        );
+        assert_eq!(
+            q.admit(&expiring_at(124), 101, N, MARGIN),
+            Admission::Refused(Refusal::ExpiryTooTight)
+        );
+        assert!(admitted(q.admit(&expiring_at(125), 101, N, MARGIN)));
     }
 
     #[test]
