@@ -67,6 +67,7 @@ async fn main() -> Result<(), BoxError> {
     };
     let revealed = Arc::new(spent::ChainNullifiers::new(chain.endpoint_count()));
     let queue = Arc::new(Queue::watching(revealed.clone()));
+    queue.set_schedule(params.flush_budget, params.hold_span());
     let tip = Arc::new(TipTracker::new(guard));
 
     tracing::info!(
@@ -77,8 +78,13 @@ async fn main() -> Result<(), BoxError> {
         mining_margin = params.mining_margin,
         delivery_lag = params.delivery_lag,
         min_wallet_expiry = params.min_wallet_expiry,
+        flush_budget = params.flush_budget,
         "zero-indexer-hub starting"
     );
+
+    // Before the first observe: the tip that makes the tracker ready starts
+    // the queue's holdoff, and on testnet and regtest that is the next one.
+    tip.bind(queue.clone());
 
     // The hub cannot admit anything until it knows a height, because both the
     // flush schedule and the expiry check are defined against one. Seed it here

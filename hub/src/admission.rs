@@ -97,6 +97,9 @@ pub struct Inspected {
     /// How many transparent outputs the transaction has: how many second legs
     /// it could fund.
     pub transparent_outputs: usize,
+    /// The ZIP 218 shielded cost: Sapling spends and outputs, Orchard and
+    /// Ironwood actions, and two per JoinSplit. 0 when the bytes do not parse.
+    pub shielded_cost: u32,
     pending: Option<Pending>,
 }
 
@@ -140,6 +143,7 @@ pub fn inspect(tx_bytes: &[u8]) -> Inspected {
         orchard_nullifiers: Vec::new(),
         spends: Vec::new(),
         transparent_outputs: 0,
+        shielded_cost: 0,
         pending: None,
     };
 
@@ -160,6 +164,7 @@ pub fn inspect(tx_bytes: &[u8]) -> Inspected {
         .map(|height| height.0)
         .filter(|height| *height != 0);
     inspected.transparent_outputs = tx.outputs().len();
+    inspected.shielded_cost = shielded_cost(&tx);
 
     if tx.has_orchard_shielded_data() {
         if let Some(pending) = prove_candidate(&tx) {
@@ -243,6 +248,20 @@ fn bundle_key(bundle: &OrchardBundle) -> [u8; 32] {
         hasher.update(action.cv_net().to_bytes());
     }
     hasher.finalize().into()
+}
+
+/// The ZIP 218 shielded cost of `tx`. A JoinSplit costs two, the Sprout
+/// weight in zebra's global block budget. Saturating, so a hostile count
+/// cannot wrap.
+fn shielded_cost(tx: &Transaction) -> u32 {
+    let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    count(tx.sapling_spends_count())
+        .saturating_add(count(tx.sapling_outputs().count()))
+        .saturating_add(count(tx.orchard_actions().count()))
+        .saturating_add(count(tx.ironwood_actions().count()))
+        // v4 is refused and v5/v6 carry no JoinSplits, so this is 0 on
+        // everything this hub admits. The weight stays because ZIP 218 counts 2.
+        .saturating_add(count(tx.joinsplit_count()).saturating_mul(2))
 }
 
 /// The shim's second arm, verbatim: the transaction spends a transparent output
@@ -403,6 +422,39 @@ pub(crate) mod tests {
         assert_eq!(inspected.lane, Lane::Unverified);
         assert!(inspected.bundle_keys.is_empty());
         assert!(!inspected.needs_proof());
+    }
+
+    #[test]
+    fn the_zip_218_cost_counts_every_shielded_part() {
+        // Counted with the accessors: Sapling spends, Sapling outputs, Orchard
+        // actions, Ironwood actions, JoinSplits.
+        for (bytes, counts) in [
+            (PROVEN_A, [0, 0, 2, 2, 0]),
+            (PROVEN_B, [0, 0, 2, 2, 0]),
+            (MAINNET_NU7_MIGRATION, [0, 0, 2, 2, 0]),
+        ] {
+            let tx = Transaction::zcash_deserialize(bytes).unwrap();
+            assert_eq!(
+                [
+                    tx.sapling_spends_count(),
+                    tx.sapling_outputs().count(),
+                    tx.orchard_actions().count(),
+                    tx.ironwood_actions().count(),
+                    tx.joinsplit_count(),
+                ],
+                counts
+            );
+            assert_eq!(inspect(bytes).shielded_cost, 4);
+        }
+    }
+
+    #[test]
+    fn unparseable_and_transparent_bytes_cost_nothing() {
+        let mut padded = PROVEN_A.to_vec();
+        padded.extend_from_slice(&[0; 16]);
+        for bytes in [&[0x42; 64][..], &padded, TRANSPARENT_ONLY] {
+            assert_eq!(inspect(bytes).shielded_cost, 0);
+        }
     }
 
     #[test]
