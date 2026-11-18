@@ -159,6 +159,6 @@ if ! reachable "$BACKEND"; then
 fi
 
 # The protos live beside the shim, in zero-indexer-proto.
-PROTO_DIR="$(cd "$(dirname "$0")/../proto/proto" && pwd)"
+PROTO_DIR="$(cd "$SHIM_DIR/../proto/proto" && pwd)"
 
 run_live
