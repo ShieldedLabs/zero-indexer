@@ -525,16 +525,6 @@ who = "Pat Hickey <phickey@fastly.com>"
 criteria = "safe-to-deploy"
 version = "0.3.0"
 
-[[audits.bytecode-alliance.audits.webpki-roots]]
-who = "Pat Hickey <phickey@fastly.com>"
-criteria = "safe-to-deploy"
-delta = "0.22.4 -> 0.23.0"
-
-[[audits.bytecode-alliance.audits.webpki-roots]]
-who = "Pat Hickey <phickey@fastly.com>"
-criteria = "safe-to-deploy"
-delta = "0.23.0 -> 0.25.2"
-
 [[audits.embark-studios.audits.cargo_metadata]]
 who = "Johan Andersson <opensource@embark-studios.com>"
 criteria = "safe-to-deploy"
@@ -612,12 +602,6 @@ who = "Johan Andersson <opensource@embark-studios.com>"
 criteria = "safe-to-deploy"
 version = "0.1.0"
 notes = "No unsafe usage or ambient capabilities, sane build script"
-
-[[audits.embark-studios.audits.webpki-roots]]
-who = "Johan Andersson <opensource@embark-studios.com>"
-criteria = "safe-to-deploy"
-version = "0.22.4"
-notes = "Inspected it to confirm that it only contains data definitions and no runtime code"
 
 [[audits.google.audits.android_system_properties]]
 who = "Manish Goregaokar <manishearth@google.com>"
@@ -2168,13 +2152,6 @@ Migrates to `try-lock 0.2.4` to replace some unsafe APIs that were not marked
 `unsafe` (but that were being used safely).
 """
 aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
-
-[[audits.zcash.audits.webpki-roots]]
-who = "Daira-Emma Hopwood <daira@jacaranda.org>"
-criteria = "safe-to-deploy"
-delta = "0.25.2 -> 0.25.4"
-notes = "I have not checked consistency with the Mozilla IncludedCACertificateReportPEMCSV report."
-aggregated-from = "https://raw.githubusercontent.com/zcash/librustzcash/main/supply-chain/audits.toml"
 
 [[audits.zcash.audits.windows-link]]
 who = "Jack Grigg <jack@electriccoin.co>"

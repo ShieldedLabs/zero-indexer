@@ -245,10 +245,10 @@ audit-as-crates-io = true
 audit-as-crates-io = true
 
 [policy."webpki-roots:0.24.0"]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy."webpki-roots:0.25.4"]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy."webpki-roots:0.26.11"]
 
@@ -2780,10 +2780,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.webpki-root-certs]]
 version = "1.0.10"
-criteria = "safe-to-deploy"
-
-[[exemptions.webpki-roots]]
-version = "0.24.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.webpki-roots]]
