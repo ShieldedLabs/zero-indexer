@@ -62,9 +62,21 @@ wrong shape, not merely an unbuilt one.
   is, when only one indexer is configured. A full view and a view that is not
   current abstain. The log says `nullifier set synced` when it is on, and
   `nullifier check is off` with `reason=quorum` when copies pass.
+- **Budgets** each flush by ZIP 218 shielded cost. From NU7 a block holds 330
+  units. The hub keeps a reserve of 50 for other traffic, so a flush carries at
+  most 280: 248 for the proven and transparent lanes, and 32 for the
+  unverified lane. A transaction counts against its lane's budget from
+  admission until the flush that relays it ends.
 - **Flushes** the batch on a cadence, broadcasting every member to **every**
   configured indexer — a migration that entered only one mempool is one outage
   away from never being mined.
+- **Holds off** after each relay. The next flush waits until the cadence
+  height is `REORG_ALLOWANCE + MINING_MARGIN` (14) blocks past the tip that the
+  hub read at the start of that relay. A started or restarted hub holds off
+  14 blocks from the tip that made it ready, before its first flush. The wait
+  uses the cadence clock, which runs ahead of the chain while the tip is
+  stale. Admission and requeue judge expiry at the end of the hold when it is
+  later than the next boundary.
 - **Answers lookups** so a wallet can see its own just-diverted transaction
   before it is mined.
 
@@ -468,7 +480,11 @@ or 1024 entries (`MAX_QUEUE_ENTRIES`), split into three lanes:
   no key for, and an Orchard transaction with transparent inputs. Free to fill.
 
 A full lane refuses its own submissions `queue_full`, and the other lanes stay
-open. While a lane is full:
+open. `queue_full` also means that the lane's flush budget is spent (see "What
+the hub does, precisely"). A transaction whose cost is above its lane's budget
+gets `queue_full` on every try, also into an empty queue. A transaction with a
+cost of 281 to 330 can go in a block, and this hub does not take it. While a
+lane is full:
 
 - A clearnet shim tells its wallet (`error_code -1`).
 - Over the mixnet the wallet was already told success, so the transaction is
@@ -594,6 +610,11 @@ expensive and rare.
   `404` as any unknown path, so a scanner cannot tell it exists. The flag also
   gates the clearnet lookup path, `POST /transaction`, which tells anyone whether
   a txid sits in the queue. A clearnet pair needs both, so it turns the flag on.
+- **Stop grace period**: set it to at least 10 minutes. On shutdown, a hub
+  that holds migrations waits for the holdoff before its final flush: up to 14
+  block times (about 350 s at 25 s), plus a flight in progress (up to about
+  160 s for 1024 entries). Slow blocks make the wait longer. A SIGKILL during
+  the wait loses the queue, as a crash does.
 - **Certificates**: diskless means every restart is a fresh ACME order, against 5
   production issuances per name per week. Iterate on throwaway names.
 - **Watch Certificate Transparency** for your hub domain.
