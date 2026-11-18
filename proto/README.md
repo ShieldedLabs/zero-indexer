@@ -36,5 +36,7 @@ result differs from the committed files.
 
 Before this crate, the hub and shim took the same code from `zaino-proto` 0.6.0.
 The generated files here match that release, apart from the module path
-(`crate::compact_formats`) and one line wrap. The `.proto` files are under the
+(`crate::compact_formats`) and one line wrap. That release defines `CompactTxIn`
+and `TxOut` in both modules, and this crate keeps the duplication to hold the
+match. The hub and shim use neither type. The `.proto` files are under the
 MIT license of the lightwallet-protocol repository.
