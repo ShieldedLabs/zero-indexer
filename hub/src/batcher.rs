@@ -1320,7 +1320,7 @@ mod tests {
     use prost::Message;
     use tokio::net::TcpListener;
     use tokio::sync::Notify;
-    use zaino_proto::proto::service::{LightdInfo, RawTransaction, SendResponse};
+    use zero_indexer_proto::service::{LightdInfo, RawTransaction, SendResponse};
 
     const GET_LIGHTD_INFO_PATH: &str = "/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo";
     const TIP: u32 = 1000;

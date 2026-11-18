@@ -41,8 +41,8 @@ use percent_encoding::percent_decode_str;
 use prost::Message;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
-use zaino_proto::proto::compact_formats::CompactBlock;
-use zaino_proto::proto::service::{
+use zero_indexer_proto::compact_formats::CompactBlock;
+use zero_indexer_proto::service::{
     BlockId, BlockRange, Empty, LightdInfo, PoolType, RawTransaction, SendResponse, TxFilter,
 };
 
@@ -383,7 +383,7 @@ impl ChainClient {
                         Err("an indexer answered a lookup with an empty transaction".into())
                     }
                     Ok(raw) => Ok(TxLookup::Found {
-                        // `RawTransaction.data` is `Bytes` since zaino-proto 0.4.0;
+                        // `RawTransaction.data` is `Bytes` (see zeronym/proto/gen);
                         // copy it out because `TxLookup` feeds `Zeroizing`, which
                         // needs a buffer it owns exclusively.
                         data: raw.data.to_vec(),
@@ -1543,7 +1543,7 @@ mod tests {
     }
 
     fn block(height: u64, orchard: &[[u8; 32]], ironwood: &[[u8; 32]]) -> CompactBlock {
-        use zaino_proto::proto::compact_formats::{CompactOrchardAction, CompactTx};
+        use zero_indexer_proto::compact_formats::{CompactOrchardAction, CompactTx};
         let actions = |nullifiers: &[[u8; 32]]| {
             nullifiers
                 .iter()

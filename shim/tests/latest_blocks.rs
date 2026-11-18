@@ -30,8 +30,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use http_body_util::{BodyExt, Full};
 use prost::Message;
 use tokio::net::TcpListener;
-use zaino_proto::proto::compact_formats::CompactBlock;
-use zaino_proto::proto::service::{BlockId, BlockRange, ChainSpec, Empty, LightdInfo, PoolType};
+use zero_indexer_proto::compact_formats::CompactBlock;
+use zero_indexer_proto::service::{BlockId, BlockRange, ChainSpec, Empty, LightdInfo, PoolType};
 
 use zero_indexer_shim::classify::classify_with_evidence;
 use zero_indexer_shim::proxy::Backend;

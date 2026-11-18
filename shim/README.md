@@ -428,12 +428,11 @@ node, which is why it is not here.
 
 ## Notes for whoever picks this up
 
-* `zebra-chain` and `zaino-proto` are **exact-version crates.io pins**
-  (`=15.0.0`, `=0.6.0`), fixed by `Cargo.lock` checksums. `zaino-proto` must
-  stay `default-features = false`: its `heavy` feature lets its `build.rs` find
-  `protoc` and regenerate its committed protos, and it also pulls a second,
-  type-incompatible `zebra-chain`. The build sets no `PROTOC`.
-* The container build context is `shim/` plus `vendor/`, assembled by
+* `zebra-chain` is an **exact-version crates.io pin** (`=15.0.0`), fixed by
+  `Cargo.lock` checksums.
+* The gRPC types come from `../proto` (`zero-indexer-proto`), a path crate with
+  committed generated code and no build script; see `../proto/README.md`.
+* The container build context is `shim/`, `vendor/` and `proto/`, assembled by
   `deploy/assemble.sh`; see `deploy/README.md`.
 * Diversion plugs into `intercept::send_transaction`, as one branch on
   `inspection.treat_as_migration()` right after the log.
@@ -447,7 +446,7 @@ node, which is why it is not here.
    read off. The shim no longer lets the operator *cause* this case at will (it
    normalizes the advertised `grpc-accept-encoding` to `identity`), but a wallet
    that compresses unprompted still lands here.
-2. Depending on `zaino-proto` pulls tonic into the shipped dependency graph for
+2. `zero-indexer-proto` pulls tonic into the shipped dependency graph for
    two protobuf messages. Hand-writing those two structs (about 20 lines) would
    shrink the enclave's trusted surface before the enclave build.
 3. The shim dials the backing indexer before it classifies anything, just later

@@ -181,32 +181,22 @@ HEAD` and strips the `zeronym/` level, so the context root holds:
 shim/                                  the crate, including deploy/
 vendor/nym-upgrade-mode-check/         the crypto-common [patch] target
 vendor/webpki-roots-0.2{4.0,5.4}/      the eMudhra-distrust [patch] targets
+proto/                                 zero-indexer-proto: Cargo.toml and src/
 ```
 
-`shim/` and `vendor/` are siblings, as in the repo, so the shim's `../vendor/*`
-path references resolve unchanged inside the image. **No manifest is edited
-anywhere.** `zebra-chain` (`=15.0.0`) and `zaino-proto` (`=0.6.0`) come from
-crates.io during `cargo fetch --locked`, pinned by the checksums in the committed
+`shim/`, `vendor/` and `proto/` are siblings, as in the repo, so the shim's
+`../vendor/*` and `../proto` path references resolve unchanged inside the image.
+**No manifest is edited anywhere.** `zebra-chain` (`=15.0.0`) comes from
+crates.io during `cargo fetch --locked`, pinned by the checksum in the committed
 `Cargo.lock`. The context layout is the one the shim keeps after it moves to its
 own repository, so the move leaves the in-image paths and the hash unchanged.
 
 ## Two traps worth naming
 
-**protoc must stay absent from the image.** `zaino-proto`'s `build.rs`
-regenerates its committed `src/proto/*.rs` whenever protoc is reachable.
-`default-features = false` in the shim's manifest removes the
-`which::which("protoc")` branch, but the `PROTOC` env-var branch of
-`protoc_available()` is *not* feature-gated. So the recipe deliberately does not
-copy `stagex/user-protobuf` (which the sibling zaino stage does) and never sets
-`PROTOC`. Two independent locks: nothing to find, nothing to regenerate. Do not
-add the protobuf pallet back while copy-pasting from the sibling recipe. Inside
-a container this would only alter a throwaway copy, but it silently changes what
-gets compiled, and therefore the hash.
-
-The `default-features = false` lock is the one that holds on a host with
-`protoc` on `PATH`, and the absent-protoc image is the second, independent one.
-Host test runs use `env -u PROTOC`, as `zeronym-guards.yml` does: `zaino-proto`
-0.6.0's `build.rs` treats a set-but-empty `PROTOC` as a protoc path.
+**The gRPC code is committed, generated code.** `zero-indexer-proto` has no
+build script and the image carries no protoc, so `proto/src/` compiles as it is.
+`zeronym/proto/gen` regenerates it on a developer machine, and the `proto` job
+in `zeronym-guards.yml` checks that the committed files match.
 
 **No cache mounts, ever, in this file.** See above. The sibling
 `overlay/Containerfile` uses them and is correspondingly unsuitable for proving
@@ -255,7 +245,7 @@ must never drift apart.
 
 **Changing the compiled source means re-baselining too**, and that is the more
 common case: any edit under `zeronym/shim/src/`, to `Cargo.toml` or
-`Cargo.lock` (including the `zebra-chain` and `zaino-proto` pins) moves the binary and therefore the published hash.
+`Cargo.lock` (including the `zebra-chain` pin), or under `zeronym/proto/src/`, moves the binary and therefore the published hash.
 Both 2026-08-01 re-baselines were of exactly that kind (two classifier rulings in
 one day), and both are written up below. Two traps the first one exposed, both
 worth knowing before you start.
@@ -284,7 +274,8 @@ below names which deployment each superseded binary belongs to, where one does.
 
 | | binary sha256 | what it was built from |
 |---|---|---|
-| **current**, a transaction on an unknown consensus branch is refused | `72e57bc05534c0509c1923022157089425556bbb476c43e4639a69f9918add7a` | two commits, `f1213bbb` and `cc2f44f3`: with a hub configured, `intercept.rs` answers a V5 or V6 transaction on a consensus branch the build does not know with a `SendResponse` error and sends it nowhere, and its per-send log line says `diverted_in_production=false` for a send the shim refuses. No recipe change and no dependency change. Measured by `zeronym-shim-reproduce` across four cold builds, two runs of two (push and pull_request), all agreeing. |
+| **current**, gRPC types from zero-indexer-proto | `20ffe736f5a15dac34970b9ce54ec3c153d7ec10678923ffc5f31d60a26f0dfd` | one commit, `d83157dc`: the gRPC types come from the path crate `zeronym/proto` (`zero-indexer-proto`) in place of crates.io `zaino-proto` 0.6.0, and the context gains `proto/`. The generated code equals the `zaino-proto` 0.6.0 output apart from the module path. `Cargo.lock` drops `zaino-proto` and its build-only packages. No change to shim behavior. Measured by `zeronym-shim-reproduce` across four cold builds, two runs of two (push and pull_request), all agreeing. |
+| superseded, a transaction on an unknown consensus branch is refused | `72e57bc05534c0509c1923022157089425556bbb476c43e4639a69f9918add7a` | two commits, `f1213bbb` and `cc2f44f3`: with a hub configured, `intercept.rs` answers a V5 or V6 transaction on a consensus branch the build does not know with a `SendResponse` error and sends it nowhere, and its per-send log line says `diverted_in_production=false` for a send the shim refuses. No recipe change and no dependency change. Measured by `zeronym-shim-reproduce` across four cold builds, two runs of two (push and pull_request), all agreeing. |
 | superseded, `/healthz` reports a build the chain has moved past | `19c6f804c3eca8d38e426310bf77ca350f21203e9121031cfbb683997afaa6ea` | one commit, `c6125fb8`: `/healthz` answers `503` once the hub returns a lookup reply on a consensus branch the build does not know, and `intercept.rs` logs that case once per process. No recipe change and no dependency change. Measured by `zeronym-shim-reproduce` across four cold builds, two runs of two (push and pull_request), all agreeing. |
 | superseded, a diverted V1 to V4 transaction is refused | `22f84e60e097d8a56992c3a7aaaf037216b85f6fbcff33928e36fe48b0be75e1` | one commit, `1253bd5b`: `intercept.rs` answers a V1 to V4 transaction that would have been diverted with a `SendResponse` error and sends it nowhere, since ZIP 2003 retired those formats at NU7. No recipe change and no dependency change. Measured locally across two cold builds under `linux/amd64` emulation on an arm64 Mac, agreeing. |
 | superseded, zebra-chain 15 for NU7 | `da854e1089eb97a5f69d744d73333b43e37d60800141c237f74236f907272565` | one commit, `db090893`: `zebra-chain` moves from `=12.0.0` to `=15.0.0` so the shim parses NU7 transactions, and `classify.rs` asks `has_orchard_shielded_data()` in its two Orchard checks. `Cargo.lock` moves with the pin. No recipe change. Measured by `zeronym-shim-reproduce` across four cold builds, two runs of two (push and pull_request), all agreeing, and matched by two local cold builds. |
@@ -1175,9 +1166,8 @@ If your hash differs, check these in order:
    Containerfile, `--no-cache` will not clear it and the build is no longer cold.
 3. **A `rust-toolchain.toml`.** There is none today, and adding one whose channel
    differs from `pallet-rust:1.96.0` makes rustup fetch a different compiler.
-4. **`stagex/user-protobuf` or a `PROTOC` env var.** Either one lets
-   `zaino-proto`'s `build.rs` regenerate its committed protos, silently changing
-   what gets compiled.
+4. **An edit under `zeronym/proto/src/`.** The generated gRPC code there is
+   compiled into the binary.
 5. **The frontend pin.** `# syntax=docker/dockerfile:1.26.0@sha256:ecfaec9e…`
    on line 1 of the Containerfile. A different frontend can emit different LLB.
 6. **Commit.** `git archive HEAD` means an unexpected `HEAD` silently builds

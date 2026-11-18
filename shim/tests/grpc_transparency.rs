@@ -30,12 +30,12 @@ use tokio_stream::Stream;
 use tonic::transport::server::TcpIncoming;
 use tonic::transport::{Channel, Server};
 use tonic::{Request, Response, Status, Streaming};
-use zaino_proto::proto::compact_formats::{CompactBlock, CompactTx};
-use zaino_proto::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
-use zaino_proto::proto::service::compact_tx_streamer_server::{
+use zero_indexer_proto::compact_formats::{CompactBlock, CompactTx};
+use zero_indexer_proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
+use zero_indexer_proto::service::compact_tx_streamer_server::{
     CompactTxStreamer, CompactTxStreamerServer,
 };
-use zaino_proto::proto::service::{
+use zero_indexer_proto::service::{
     Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, Duration as PingDuration, Empty,
     GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, GetMempoolTxRequest,
     GetSubtreeRootsArg, LightdInfo, PingResponse, RawTransaction, SendResponse, SubtreeRoot,

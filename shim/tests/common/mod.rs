@@ -27,7 +27,7 @@ use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use prost::Message;
 use tokio::net::{TcpListener, TcpStream};
-use zaino_proto::proto::service::{RawTransaction, SendResponse, TxFilter};
+use zero_indexer_proto::service::{RawTransaction, SendResponse, TxFilter};
 
 use zero_indexer_shim::proxy::{GET_TRANSACTION, SEND_TRANSACTION};
 
