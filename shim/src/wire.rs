@@ -662,7 +662,7 @@ mod tests {
         // then permanently unlookupable: accepted, published, and answered
         // `error` on every later lookup, so the wallet sees UNAVAILABLE forever
         // for a migration that really was accepted.
-        assert!(MAX_NYM_TX_BYTES <= MAX_LOOKUP_REPLY_TX_BYTES);
+        const { assert!(MAX_NYM_TX_BYTES <= MAX_LOOKUP_REPLY_TX_BYTES) };
         let at_cap = LookupReply::Found {
             height: 1,
             tx: Zeroizing::new(vec![0x5a; MAX_NYM_TX_BYTES]),

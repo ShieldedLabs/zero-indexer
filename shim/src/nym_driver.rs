@@ -341,7 +341,7 @@ pub async fn run_driver(
                     // residual it could be holding. So "our queue is empty and two
                     // rounds passed" is a sound proxy for "the probe was emitted
                     // and nothing came back".
-                    Some(mark) if seen == mark && out_frames.len() == 0 => {
+                    Some(mark) if seen == mark && out_frames.is_empty() => {
                         silent_rounds += 1;
                         if silent_rounds >= SILENT_ROUNDS_BEFORE_REBUILD {
                             tracing::error!(

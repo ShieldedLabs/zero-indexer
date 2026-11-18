@@ -44,6 +44,11 @@ mixnet-localnet = ["mixnet-driver", "dep:nym-topology"]
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(zcash_unstable, values("zfuture"))'] }
 
+# CI runs clippy with warnings as errors. These two style lints stay off.
+[lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"
+
 [dependencies]
 # The real Zcash parser, at the shim's exact pin. The hub re-parses every
 # migration it receives rather than trusting the shim, so it needs exactly the

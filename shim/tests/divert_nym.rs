@@ -354,7 +354,10 @@ async fn a_get_transaction_is_answered_over_the_mixnet_and_the_operator_is_never
     assert_eq!(raw.height, 0, "height 0 is the mempool sentinel");
 
     // The hub was asked with the wallet's bytes unmodified.
-    assert_eq!(seen.lookups.lock().unwrap().as_slice(), &[hash.clone()]);
+    assert_eq!(
+        seen.lookups.lock().unwrap().as_slice(),
+        std::slice::from_ref(&hash)
+    );
     assert_eq!(
         backend_conns.load(Ordering::SeqCst),
         0,
@@ -395,7 +398,10 @@ async fn a_queue_hit_with_no_bytes_is_relayed_as_pending() {
     );
     assert_eq!(raw.height, 0, "height 0 is the mempool sentinel");
 
-    assert_eq!(seen.lookups.lock().unwrap().as_slice(), &[hash.clone()]);
+    assert_eq!(
+        seen.lookups.lock().unwrap().as_slice(),
+        std::slice::from_ref(&hash)
+    );
     assert_eq!(
         backend_conns.load(Ordering::SeqCst),
         0,
