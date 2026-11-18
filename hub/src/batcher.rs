@@ -1,9 +1,12 @@
 //! The flush cadence: when a batch is published, and what drives the clock.
 //!
-//! The queue holds; this drives. A flush happens at every multiple of
-//! `flush_interval` blocks and at no other time. There is deliberately **no**
-//! other trigger: not a queue depth, not an approaching expiry, not an operator
-//! command.
+//! The queue holds; this drives. A flush happens at the first multiple of
+//! `flush_interval` blocks after the holdoff ends, and at no other time. The
+//! holdoff is `REORG_ALLOWANCE + MINING_MARGIN` blocks from the tip of the last
+//! relay, or from the tip that made the hub ready. It gives a batch time to be
+//! mined before the next one competes for the same block space. There is
+//! deliberately **no** other trigger: not a queue depth, not an approaching
+//! expiry, not an operator command.
 //!
 //! **Why the cadence is unconditional (REVIEW #2, #8).** Every conditional
 //! trigger is a lever someone else can pull. Count-based flushing lets an
@@ -49,12 +52,12 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::collections::VecDeque;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::admission::Lane;
 use crate::chain::{ChainClient, Publish, SPLIT_VERDICT};
-use crate::queue::Queue;
+use crate::queue::{Queue, BLOCK_SHIELDED_BUDGET, FLUSH_BUDGET, RESERVE, UNVERIFIED_FLUSH_BUDGET};
 use crate::tip_guard;
 use crate::BoxError;
 
@@ -92,13 +95,17 @@ const NOMINAL_BLOCK_SECS: u64 = crate::tip_guard::TARGET_BLOCK_SECS;
 /// How often the tip is polled.
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 
-/// The scheduling parameters, validated against the wallet expiry ceiling.
+/// The scheduling parameters, validated against the wallet expiry ceiling,
+/// the holdoff and the block's shielded budget.
 #[derive(Debug, Clone, Copy)]
 pub struct BatchParams {
     pub flush_interval: u32,
     pub mining_margin: u32,
     pub delivery_lag: u32,
     pub min_wallet_expiry: u32,
+    /// The ZIP 218 shielded cost one flush may carry. At most
+    /// `BLOCK_SHIELDED_BUDGET - RESERVE`.
+    pub flush_budget: u32,
 }
 
 impl Default for BatchParams {
@@ -108,6 +115,7 @@ impl Default for BatchParams {
             mining_margin: MINING_MARGIN,
             delivery_lag: MAX_DELIVERY_LAG,
             min_wallet_expiry: MIN_WALLET_EXPIRY,
+            flush_budget: FLUSH_BUDGET,
         }
     }
 }
@@ -136,7 +144,39 @@ impl BatchParams {
         if self.flush_interval == 0 {
             return Err("flush_interval must be at least one block".into());
         }
+        // A flush interval shorter than the holdoff would skip boundaries.
+        if self.flush_interval < self.hold_span() {
+            return Err(format!(
+                "flush_interval ({}) is shorter than the holdoff ({} reorg + {} mining margin)",
+                self.flush_interval, REORG_ALLOWANCE, self.mining_margin
+            )
+            .into());
+        }
+        if self.flush_budget > BLOCK_SHIELDED_BUDGET - RESERVE {
+            return Err(format!(
+                "flush_budget ({}) leaves less than the reserve ({}) of a block's {}",
+                self.flush_budget, RESERVE, BLOCK_SHIELDED_BUDGET
+            )
+            .into());
+        }
+        if self.flush_budget < UNVERIFIED_FLUSH_BUDGET {
+            return Err(format!(
+                "flush_budget ({}) is below the unverified lane's share ({})",
+                self.flush_budget, UNVERIFIED_FLUSH_BUDGET
+            )
+            .into());
+        }
         Ok(())
+    }
+
+    /// Blocks a flush waits after the hold starts.
+    pub fn hold_span(&self) -> u32 {
+        REORG_ALLOWANCE.saturating_add(self.mining_margin)
+    }
+
+    /// The first height at which a flush may run, for a hold from `from`.
+    pub fn hold_until(&self, from: u32) -> u32 {
+        from.saturating_add(self.hold_span())
     }
 }
 
@@ -211,6 +251,8 @@ impl TipState {
 pub struct TipTracker {
     guard: TipGuard,
     inner: RwLock<TipState>,
+    /// The queue whose holdoff starts when this tracker becomes ready.
+    queue: OnceLock<Arc<Queue>>,
 }
 
 impl TipTracker {
@@ -226,6 +268,22 @@ impl TipTracker {
                 history: VecDeque::new(),
                 last_flush_boundary: None,
             }),
+            queue: OnceLock::new(),
+        }
+    }
+
+    /// Start `queue`'s holdoff when this tracker becomes ready. Call before
+    /// the first [`observe`](Self::observe). A second bind keeps the first
+    /// queue.
+    pub fn bind(&self, queue: Arc<Queue>) {
+        let _ = self.queue.set(queue);
+    }
+
+    /// Store the hold under the tip's write guard, so it is in place before
+    /// [`is_ready`](Self::is_ready) can be true. Lock order: tip, then queue.
+    fn start_hold(&self, height: u32) {
+        if let Some(queue) = self.queue.get() {
+            queue.note_hold(height);
         }
     }
 
@@ -297,6 +355,8 @@ impl TipTracker {
                 state.warm_until = Some(now + WARMUP);
                 state.history.push_back((now, height));
                 tracing::info!(height, "tip warm-up started; admission opens when it ends");
+            } else {
+                self.start_hold(height);
             }
             return;
         }
@@ -316,6 +376,7 @@ impl TipTracker {
                 match state.warm_until {
                     Some(until) if now >= until && state.plausible_climb(height, now) => {
                         state.warm_until = None;
+                        self.start_hold(height);
                         tracing::info!(height, "tip warm-up complete; admission open");
                     }
                     // Still finding the tip: this high replaces the anchor.
@@ -444,8 +505,10 @@ impl TipTracker {
 /// Run the flush cadence until `shutdown` resolves.
 ///
 /// Polls the tip, and whenever the height crosses into a new flush epoch
-/// (`height / flush_interval`), publishes everything the queue holds. On
-/// shutdown, finishes any flush in progress, then flushes once more.
+/// (`height / flush_interval`) after the holdoff ends, publishes everything
+/// the queue holds. On shutdown, finishes any flush in progress, waits for the
+/// holdoff if the queue holds anything, drops what can no longer be mined, and
+/// flushes once more.
 pub async fn run(
     queue: Arc<Queue>,
     chain: Arc<ChainClient>,
@@ -472,6 +535,7 @@ async fn run_with_poll_interval(
         mining_margin = params.mining_margin,
         "batching cadence started"
     );
+    tip.bind(queue.clone());
 
     let mut shutdown = std::pin::pin!(shutdown);
     let mut next_poll = tokio::time::Instant::now();
@@ -491,14 +555,7 @@ async fn run_with_poll_interval(
             _ = tokio::time::sleep_until(next_poll) => {}
         }
 
-        match chain.tip_heights().await {
-            Ok(heights) => tip.observe(&heights),
-            Err(err) => {
-                // Not an error condition on its own: staleness is decided by
-                // elapsed time since the last advance, not by one failure.
-                tracing::debug!(%err, "tip query failed on every node");
-            }
-        }
+        poll_tip(&chain, &tip).await;
 
         if tip.is_ready() {
             // The boundary of the epoch the cadence height is in. Rounding a
@@ -510,7 +567,11 @@ async fn run_with_poll_interval(
                 // flushing, so a restart does not publish a partial batch
                 // off-cadence.
                 None => tip.record_flush_boundary(boundary),
-                Some(previous) if boundary > previous => {
+                // The holdoff waits on the cadence clock, as the spec's
+                // `isFlushDue` does, so it runs ahead while the tip is stale.
+                // A held boundary is not recorded: the first poll past the
+                // hold flushes.
+                Some(previous) if boundary > previous && hold_over(&queue, &tip, params) => {
                     // Recorded before the flush. The order does not matter
                     // while only this loop observes the tip, since the tip
                     // cannot change during the flush; it would if that moved.
@@ -525,6 +586,31 @@ async fn run_with_poll_interval(
     }
 
     tracing::info!("cadence shutting down; publishing what is held rather than dropping it");
+    if !queue.is_empty() {
+        match queue.hold_from() {
+            // The same cadence clock as the scheduled arm.
+            Some(from) => {
+                let target = params.hold_until(from);
+                if tip.cadence_height() < target {
+                    tracing::info!(target, "final flush waits for the holdoff");
+                }
+                while tip.cadence_height() < target {
+                    tokio::time::sleep(poll_interval).await;
+                    poll_tip(&chain, &tip).await;
+                }
+            }
+            None => tracing::error!(
+                "final flush has no holdoff to wait for: the tip never became ready for this queue"
+            ),
+        }
+        let dropped_expiring = queue.drop_expiring(tip.cadence_height(), params.mining_margin);
+        if dropped_expiring > 0 {
+            tracing::error!(
+                dropped_expiring,
+                "dropped migrations the final flush cannot get mined in time; they exist nowhere else"
+            );
+        }
+    }
     flush(&queue, &chain, &tip, params).await;
 
     // What the shutdown flush could not place is still in the queue, and the
@@ -538,6 +624,27 @@ async fn run_with_poll_interval(
             "shutting down with migrations the indexer could not be reached for; they are lost"
         );
     }
+}
+
+/// Ask every node for its tip and record the answers. The only caller of
+/// [`TipTracker::observe`] in the cadence; [`flush`] never calls it.
+async fn poll_tip(chain: &ChainClient, tip: &TipTracker) {
+    match chain.tip_heights().await {
+        Ok(heights) => tip.observe(&heights),
+        Err(err) => {
+            // Not an error condition on its own: staleness is decided by
+            // elapsed time since the last advance, not by one failure.
+            tracing::debug!(%err, "tip query failed on every node");
+        }
+    }
+}
+
+/// Whether the holdoff has ended on the cadence clock. No hold yet means the
+/// tip never became ready for this queue, and nothing flushes.
+fn hold_over(queue: &Queue, tip: &TipTracker, params: BatchParams) -> bool {
+    queue
+        .hold_from()
+        .is_some_and(|from| tip.cadence_height() >= params.hold_until(from))
 }
 
 /// Publish everything held, all at once, in an unpredictable order.
@@ -555,7 +662,11 @@ pub async fn flush(
     tip: &Arc<TipTracker>,
     params: BatchParams,
 ) -> usize {
-    let batch = queue.drain_shuffled();
+    // The holdoff starts at the tip read before the relay. Nothing observes
+    // the tip during a flush, so blocks mined in flight are not counted.
+    // It starts before any verdict: a relay can land while its answer is lost.
+    let hold_at = tip.observed_height();
+    let (batch, flight) = queue.begin_flight(hold_at);
     let size = batch.len();
 
     if size == 0 {
@@ -590,6 +701,9 @@ pub async fn flush(
     let fresh = !tip.is_stale();
     let proven = batch.iter().filter(|e| e.lane == Lane::Proven).count();
     let transparent = batch.iter().filter(|e| e.lane == Lane::Transparent).count();
+    let shielded_cost = batch
+        .iter()
+        .fold(0u32, |sum, e| sum.saturating_add(e.shielded_cost));
     for (i, entry) in batch.into_iter().enumerate() {
         match outcomes.get(i) {
             Some(Publish::Accepted { .. }) | Some(Publish::AlreadyKnown) => achieved += 1,
@@ -653,6 +767,8 @@ pub async fn flush(
         params.mining_margin,
     );
     let anchored = queue.requeue(anchors, height, params.flush_interval, params.mining_margin);
+    // The flight ends here. Every returning entry is resident again.
+    drop(flight);
 
     // Aggregates only. Never a txid, never a body, never a per-entry
     // identifier: in a Nitro enclave the tracing output reaches the parent host,
@@ -663,6 +779,7 @@ pub async fn flush(
         proven,
         transparent,
         unverified = size - proven - transparent,
+        shielded_cost,
         achieved_batch_size = achieved,
         rejected,
         requeued = requeued.held,
@@ -1835,12 +1952,22 @@ mod tests {
         let tip = Arc::new(TipTracker::new(TipGuard::Unguarded));
 
         let signal = mock.on_send.clone();
+        let height = mock.height.clone();
         let cadence = tokio::spawn(run_with_poll_interval(
             queue.clone(),
             chain,
             tip.clone(),
             BatchParams::default(),
-            async move { signal.notified().await },
+            async move {
+                signal.notified().await;
+                // The flush at TIP + N starts a holdoff to TIP + N + 14, which
+                // the shutdown flush waits for. Moved after the send, so the
+                // hold is already stored at TIP + N.
+                height.store(
+                    u64::from(TIP + N + REORG_ALLOWANCE + MARGIN),
+                    Ordering::SeqCst,
+                );
+            },
             Duration::from_millis(20),
         ));
 
@@ -1955,19 +2082,31 @@ mod tests {
             mock.sent.lock().unwrap().is_empty(),
             "flushed inside a spent epoch"
         );
+        // The end of the holdoff from TIP, still in the epoch of TIP, so the
+        // shutdown flush need not wait.
+        let hold_until = TIP + REORG_ALLOWANCE + MARGIN;
+        mock.height.store(u64::from(hold_until), Ordering::SeqCst);
+        wait_until("the end of the holdoff", || {
+            tip.observed_height() == hold_until
+        })
+        .await;
         let _ = stop.send(());
         let _ = cadence.await;
     }
 
-    /// The tip stops at 995 with an entry expiring at 1010 held. The hub goes
+    /// The tip stops at 995 with an entry expiring at 1013 held. The hub goes
     /// stale, its clock free-runs into the epoch at 1000, and the loop flushes;
     /// the indexer cannot be reached. That epoch is spent for admission, but
     /// not for an entry already acknowledged:
     ///
     /// - the requeue inside that flush judges at the observed 995, so the entry
-    ///   is held and offered again, not dropped on the estimate's clock;
+    ///   is held and offered again, not dropped on the estimate's clock. With
+    ///   the holdoff from 995 that is max(1000, 1009) + 4 = 1013;
     /// - when the tip returns at 998, the hub refuses an expiry of 1010, which
     ///   judged at 998 alone would count on a flush at 1000.
+    ///
+    /// The tip then moves to 1009, the one height that ends the shutdown wait
+    /// and keeps 1013 through the final drop.
     #[tokio::test]
     async fn a_free_running_flush_spends_its_epoch_for_admission_not_for_requeue() {
         let mock = spawn_mock_indexer(vec![Answer::Status("14")], Duration::ZERO).await;
@@ -1977,7 +2116,7 @@ mod tests {
             vec![crate::queue::Entry {
                 key: [7; 32],
                 txid: None,
-                expiry: Some(TIP + MARGIN + 6),
+                expiry: Some(TIP + MARGIN + 9),
                 tx_bytes: zeroize::Zeroizing::new(junk(7)),
                 attempts: 0,
                 received_height: TIP - 5,
@@ -2035,6 +2174,12 @@ mod tests {
         );
 
         // The shutdown flush offers whatever the free-running flush held.
+        let hold_until = TIP - 5 + REORG_ALLOWANCE + MARGIN;
+        mock.height.store(u64::from(hold_until), Ordering::SeqCst);
+        wait_until("the end of the holdoff", || {
+            tip.observed_height() == hold_until
+        })
+        .await;
         let _ = stop.send(());
         let _ = cadence.await;
         assert_eq!(
@@ -2042,5 +2187,224 @@ mod tests {
             2,
             "the entry was dropped by the flush at {TIP} instead of held"
         );
+    }
+
+    #[test]
+    fn a_budget_above_the_reserve_fails_at_startup() {
+        for flush_budget in [281, BLOCK_SHIELDED_BUDGET] {
+            let bad = BatchParams {
+                flush_budget,
+                ..BatchParams::default()
+            };
+            assert!(bad.validate().is_err(), "{flush_budget} passed");
+        }
+        let below_the_unverified_share = BatchParams {
+            flush_budget: UNVERIFIED_FLUSH_BUDGET - 1,
+            ..BatchParams::default()
+        };
+        assert!(below_the_unverified_share.validate().is_err());
+        assert_eq!(BatchParams::default().flush_budget, 280);
+    }
+
+    #[test]
+    fn the_queue_holds_off_as_long_as_the_cadence() {
+        assert_eq!(
+            crate::queue::HOLDOFF_BLOCKS,
+            REORG_ALLOWANCE + MINING_MARGIN
+        );
+        assert_eq!(
+            BatchParams::default().hold_span(),
+            crate::queue::HOLDOFF_BLOCKS
+        );
+    }
+
+    #[test]
+    fn the_first_ready_tip_starts_the_holdoff() {
+        let queue = Arc::new(Queue::new());
+        let tip = TipTracker::new(TipGuard::Unguarded);
+        tip.bind(queue.clone());
+        tip.observe(&[TIP]);
+        assert_eq!(queue.hold_from(), Some(TIP));
+        tip.observe(&[TIP + 5]);
+        assert_eq!(queue.hold_from(), Some(TIP), "a new high restarted it");
+    }
+
+    #[test]
+    fn the_warm_up_end_starts_the_holdoff() {
+        let queue = Arc::new(Queue::new());
+        let tip = TipTracker::new(TipGuard::Mainnet);
+        tip.bind(queue.clone());
+        let start = Instant::now();
+        tip.observe_at(&[ON_SCHEDULE - 1], start, Some(UNIX));
+        assert_eq!(queue.hold_from(), None, "admission is still closed");
+        tip.observe_at(
+            &[ON_SCHEDULE],
+            start + WARMUP,
+            Some(UNIX + WARMUP.as_secs()),
+        );
+        assert!(tip.is_ready());
+        assert_eq!(queue.hold_from(), Some(ON_SCHEDULE));
+    }
+
+    #[tokio::test]
+    async fn a_flush_that_comes_back_retryable_still_starts_the_holdoff() {
+        let mock = spawn_mock_indexer(vec![Answer::Status("14")], Duration::ZERO).await;
+        let queue = queue_holding(&[junk(1)]);
+        assert_eq!(queue.hold_from(), None);
+        let _ = flush(
+            &queue,
+            &client(mock.addr),
+            &test_tip(),
+            BatchParams::default(),
+        )
+        .await;
+        assert_eq!(queue.len(), 1, "precondition: the entry came back");
+        assert_eq!(queue.hold_from(), Some(TIP));
+    }
+
+    #[test]
+    fn a_flush_interval_shorter_than_the_holdoff_fails_at_startup() {
+        let short = BatchParams {
+            flush_interval: REORG_ALLOWANCE + MINING_MARGIN - 1,
+            ..BatchParams::default()
+        };
+        assert!(short.validate().is_err());
+        let exact = BatchParams {
+            flush_interval: REORG_ALLOWANCE + MINING_MARGIN,
+            ..BatchParams::default()
+        };
+        assert!(exact.validate().is_ok());
+    }
+
+    /// Start the cadence on `queue` against `mock`, polling every 10 ms. The
+    /// returned sender stops it.
+    fn start_cadence(
+        queue: &Arc<Queue>,
+        mock: &MockIndexer,
+        tip: &Arc<TipTracker>,
+    ) -> (
+        tokio::sync::oneshot::Sender<()>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let cadence = tokio::spawn(run_with_poll_interval(
+            queue.clone(),
+            client(mock.addr),
+            tip.clone(),
+            BatchParams::default(),
+            async move {
+                let _ = stopped.await;
+            },
+            Duration::from_millis(10),
+        ));
+        (stop, cadence)
+    }
+
+    /// The first observe at 1015 records the boundary 1000, and the holdoff
+    /// ends at 1015 + 14 = 1029. The boundary at 1020 waits for it.
+    #[tokio::test]
+    async fn a_scheduled_flush_waits_for_the_holdoff() {
+        let mock = spawn_mock_indexer(vec![Answer::Send(0, "txid")], Duration::ZERO).await;
+        mock.height.store(1015, Ordering::SeqCst);
+        let queue = queue_holding(&[junk(1)]);
+        let tip = Arc::new(TipTracker::new(TipGuard::Unguarded));
+        let (stop, cadence) = start_cadence(&queue, &mock, &tip);
+        wait_until("the adoption", || tip.last_flush_boundary() == Some(TIP)).await;
+
+        // The second height only shows that the poll which saw 1020 has ended.
+        for height in [1020, 1021] {
+            mock.height.store(height, Ordering::SeqCst);
+            wait_until("the tip to move on", || {
+                u64::from(tip.observed_height()) == height
+            })
+            .await;
+        }
+        assert!(
+            mock.sent.lock().unwrap().is_empty(),
+            "flushed inside the holdoff"
+        );
+
+        mock.height.store(1029, Ordering::SeqCst);
+        wait_until("the flush at the end of the holdoff", || {
+            mock.sent.lock().unwrap().len() == 1
+        })
+        .await;
+        let _ = stop.send(());
+        let _ = cadence.await;
+        assert_eq!(mock.sent.lock().unwrap().len(), 1);
+    }
+
+    /// The first observe at TIP starts a holdoff that ends at TIP + 14. A
+    /// shutdown before that height waits for it, then publishes.
+    #[tokio::test]
+    async fn the_final_flush_waits_for_the_holdoff() {
+        let mock = spawn_mock_indexer(vec![Answer::Send(0, "txid")], Duration::ZERO).await;
+        let queue = queue_holding(&[junk(1)]);
+        let tip = Arc::new(TipTracker::new(TipGuard::Unguarded));
+        let (stop, mut cadence) = start_cadence(&queue, &mock, &tip);
+        wait_until("the adoption", || tip.last_flush_boundary() == Some(TIP)).await;
+
+        let _ = stop.send(());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), &mut cadence)
+                .await
+                .is_err(),
+            "the cadence exited inside the holdoff"
+        );
+        assert!(
+            mock.sent.lock().unwrap().is_empty(),
+            "published inside the holdoff"
+        );
+
+        mock.height
+            .store(u64::from(TIP + REORG_ALLOWANCE + MARGIN), Ordering::SeqCst);
+        tokio::time::timeout(Duration::from_secs(10), cadence)
+            .await
+            .expect("the cadence must exit once the holdoff ends")
+            .expect("the cadence must not panic");
+        assert_eq!(mock.sent.lock().unwrap().len(), 1);
+        assert!(queue.is_empty());
+    }
+
+    /// An entry expiring at 1020 is held beside junk. The shutdown wait ends
+    /// at 1017, where 1020 is less than 1017 + MARGIN. The final flush
+    /// publishes the junk alone.
+    #[tokio::test]
+    async fn the_final_flush_drops_an_entry_that_misses_the_margin() {
+        let mock = spawn_mock_indexer(vec![Answer::Send(0, "txid")], Duration::ZERO).await;
+        let queue = queue_holding(&[junk(1)]);
+        assert!(matches!(
+            queue.admit(&fixture_expiring_at(1020), TIP - 10, N, MARGIN),
+            crate::queue::Admission::Admitted { .. }
+        ));
+        let tip = Arc::new(TipTracker::new(TipGuard::Unguarded));
+        let (stop, cadence) = start_cadence(&queue, &mock, &tip);
+        wait_until("the adoption", || tip.last_flush_boundary() == Some(TIP)).await;
+
+        let _ = stop.send(());
+        // Inside the epoch of 1000, so no scheduled flush runs first.
+        mock.height.store(1017, Ordering::SeqCst);
+        tokio::time::timeout(Duration::from_secs(10), cadence)
+            .await
+            .expect("the cadence must exit once the holdoff ends")
+            .expect("the cadence must not panic");
+        assert_eq!(*mock.sent.lock().unwrap(), vec![junk(1)]);
+        assert!(queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_empty_queue_exits_without_the_holdoff() {
+        let mock = spawn_mock_indexer(vec![Answer::Send(0, "txid")], Duration::ZERO).await;
+        let queue = Arc::new(Queue::new());
+        let tip = Arc::new(TipTracker::new(TipGuard::Unguarded));
+        let (stop, cadence) = start_cadence(&queue, &mock, &tip);
+        wait_until("the adoption", || tip.last_flush_boundary() == Some(TIP)).await;
+
+        let _ = stop.send(());
+        tokio::time::timeout(Duration::from_secs(2), cadence)
+            .await
+            .expect("an empty queue must not wait for the holdoff")
+            .expect("the cadence must not panic");
+        assert!(mock.sent.lock().unwrap().is_empty());
     }
 }
