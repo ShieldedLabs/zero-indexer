@@ -679,7 +679,7 @@ pub struct Requeued {
     pub held: usize,
     /// Dropped: cannot survive the flush that would publish it.
     pub dropped_expired: usize,
-    /// Dropped: out of attempts, before the entry's expiry arrived.
+    /// Dropped: out of attempts. On a stale hub the expiry may have passed.
     pub dropped_exhausted: usize,
 }
 
