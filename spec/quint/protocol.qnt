@@ -74,7 +74,7 @@ module protocol {
     { id: "plain", txid: Some("plain"), created: 1, expiry: Some(9), class: OtherShielded, spends: Set(), oversize: false, actions: 2 }
   /// The second leg of the TEX payment `early` starts: transparent parts only,
   /// and its one prevout is `early`'s single-use output. The shim diverts it
-  /// by its shape (#94).
+  /// by its shape (ShieldedLabs/zero#94).
   pure val tex: Payload =
     { id: "tex", txid: Some("tex"), created: 2, expiry: Some(9), class: TransparentOnly, spends: Set("early"), oversize: false, actions: 0 }
   /// An auto-shield of `late`'s output into Ironwood: a transparent spend
@@ -101,7 +101,7 @@ module protocol {
   pure val byzIndexer = { ...baseline, roles: { ...allHonest, indexer: Byzantine } }
 
   /// The baseline, and a shielded spend of a diverted transaction's output:
-  /// the residual #94 leaves (K10).
+  /// the residual ShieldedLabs/zero#94 leaves (K10).
   pure val shieldedSpend = { ...baseline, payloads: baseline.payloads.union(Set(autoShield)) }
 
   // ========================================================================

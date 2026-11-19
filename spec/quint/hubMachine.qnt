@@ -105,7 +105,7 @@ module hubMachine {
       budget - c.params.miningMargin + (c.staleWindow - 1) <= c.params.minWalletExpiry,
     }
 
-  /// The candidate fix of #121, where the hub runs it. The whole per-flush
+  /// The candidate fix of ShieldedLabs/zero#121, where the hub runs it. The whole per-flush
   /// budget fits the one block left after the longest flight, so a block
   /// that the miner fills takes all of it, and the holdoff fits inside one
   /// interval. It holds trivially without a budget.
@@ -840,7 +840,7 @@ module hubMachine {
     { id: "junk", txid: None, created: 1, expiry: None, class: Unparseable, spends: Set(), oversize: false, actions: 0 }
   pure val unknownUpgrade: HubConfig = { ...timely, payloads: Set(early, tight, junk), blockActions: None }
 
-  /// The candidate fix of #121 on `flakyTip`: a per-flush budget of 2, which
+  /// The candidate fix of ShieldedLabs/zero#121 on `flakyTip`: a per-flush budget of 2, which
   /// holds `early` or `late`, one at a time, and a holdoff after each relay.
   /// Other traffic may take 1 of each block's 3.
   pure val flakyTipBudget: HubConfig = {

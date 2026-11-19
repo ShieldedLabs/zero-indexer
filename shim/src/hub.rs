@@ -46,7 +46,7 @@ const TRANSACTION_PATH: &str = "/transaction";
 const TX_HEIGHT_HEADER: &str = "x-tx-height";
 
 /// The body of the hub's "no such transaction" `404`. Every hub with a lookup
-/// route has sent exactly these bytes since the route was added (#28). A `404`
+/// route has sent exactly these bytes since the route was added (ShieldedLabs/zero#28). A `404`
 /// with any other body is an error: a hub with its clearnet lookup path closed,
 /// a proxy, or a server at the hub's address answers `404` for a path it
 /// lacks, and a wallet told "not found" there would treat a mined transaction
