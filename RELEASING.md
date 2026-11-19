@@ -59,7 +59,11 @@ The release body is the changelog section plus the reproducible-build pins from 
 ```sh
 hub=$(git show "$SHA:hub/deploy/EXPECTED_SHA256")
 shim=$(git show "$SHA:shim/deploy/EXPECTED_SHA256")
-git show "$SHA:CHANGELOG.md" | awk -v h="## vX.Y.Z " 'index($0, h) == 1 {f=1; next} /^## /{f=0} f' > notes.md
+git show "$SHA:CHANGELOG.md" | awk -v tag="vX.Y.Z" '
+  $0 ~ "^## "tag"([[:space:]]|$)" {on=1; next}
+  /^## / {on=0}
+  on' > notes.md
+grep -q '[^[:space:]]' notes.md || echo "STOP: CHANGELOG.md has no vX.Y.Z section at $SHA"
 cat >> notes.md <<EOF
 
 ## Reproducible-build pins
@@ -73,7 +77,7 @@ A live enclave runs the hash in \`PROVENANCE\` on its \`deploy-<app-id>\` tag. C
 EOF
 ```
 
-Read `notes.md`. It must start with the full changelog section. Then tag `$SHA` and create the release.
+On `STOP`, fix the changelog cut and start again at step 2. Read `notes.md`. It must start with the full changelog section. Then tag `$SHA` and create the release.
 
 ```sh
 git tag -a vX.Y.Z "$SHA" -m "zeronym vX.Y.Z"
