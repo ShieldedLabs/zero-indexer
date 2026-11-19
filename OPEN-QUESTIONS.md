@@ -5,7 +5,7 @@ Working document, deliberately kept out of
 technologists reviewing the architecture; this is an internal agenda of
 questions for named people at Caution.
 
-Where an item is settled, the answer belongs in the book and this file should
+Where an item is settled, the answer belongs in [`README.md`](./README.md) and this file should
 lose the entry rather than keep both.
 
 The [shim and hub](README.md) designs are settled enough to build. What remains are cross-party items to close: platform unknowns for Caution (Anton), and a security-model checklist for Taylor and Zooko. Where the [architecture](README.md) or [trust](README.md) chapters own a mechanism, this chapter states the question and cross-links rather than restating it.
