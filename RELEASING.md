@@ -24,11 +24,11 @@ gh pr create --draft --base main --title "chore(release): cut vX.Y.Z" --fill
 
 ## 2. Pin the release commit
 
-The release is exactly the commit the prep PR landed on `main`. Push a `release-vX.Y.Z` branch at it. GitHub dispatches a workflow on a branch or tag name, so the branch carries the SHA.
+The release is exactly the merge commit of the prep PR. Later commits on `main` stay out of it. Push a `release-vX.Y.Z` branch at that commit. GitHub dispatches a workflow on a branch or tag name, so the branch carries the SHA.
 
 ```sh
 git fetch origin
-SHA=$(git rev-parse origin/main)   # must be the commit the prep PR landed
+SHA=$(gh pr list --state merged --head release-prep-vX.Y.Z --json mergeCommit --jq '.[0].mergeCommit.oid')
 git log -1 --oneline "$SHA"
 git push origin "$SHA:refs/heads/release-vX.Y.Z"
 ```
@@ -62,8 +62,8 @@ shim=$(git show "$SHA:shim/deploy/EXPECTED_SHA256")
 git show "$SHA:CHANGELOG.md" | awk -v tag="vX.Y.Z" '
   $0 ~ "^## "tag"([[:space:]]|$)" {on=1; next}
   /^## / {on=0}
-  on' > notes.md
-grep -q '[^[:space:]]' notes.md || echo "STOP: CHANGELOG.md has no vX.Y.Z section at $SHA"
+  on' > changes.md
+cp changes.md notes.md
 cat >> notes.md <<EOF
 
 ## Reproducible-build pins
@@ -77,11 +77,12 @@ A live enclave runs the hash in \`PROVENANCE\` on its \`deploy-<app-id>\` tag. C
 EOF
 ```
 
-On `STOP`, fix the changelog cut and start again at step 2. Read `notes.md`. It must start with the full changelog section. Then tag `$SHA` and create the release.
+Read `notes.md`. It must start with the full changelog section. Then tag `$SHA` and create the release. The chain stops at the first command that fails, and the first one fails when `CHANGELOG.md` has no `vX.Y.Z` section at `$SHA`.
 
 ```sh
-git tag -a vX.Y.Z "$SHA" -m "zeronym vX.Y.Z"
-git push origin vX.Y.Z
+grep -q '[^[:space:]]' changes.md &&
+git tag -a vX.Y.Z "$SHA" -m "zeronym vX.Y.Z" &&
+git push origin vX.Y.Z &&
 gh release create vX.Y.Z --verify-tag --title "zeronym vX.Y.Z" --notes-file notes.md
 ```
 
