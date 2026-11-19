@@ -4,8 +4,7 @@ This tracker comes from the zero repository. Its commit hashes refer to zero.
 
 Tracking table. One row per finding, named by its file in
 `zeronym-22aa9851caf68-high-medium/`. Assessed against `origin/main` @ `7edc373`,
-with `hub-7` / `shim-11` live in clearnet mode. Narrative and quotes are in
-`REVIEW_PLAN.md`.
+with `hub-7` / `shim-11` live in clearnet mode.
 
 ### Column meanings
 
