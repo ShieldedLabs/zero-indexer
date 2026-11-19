@@ -14,8 +14,8 @@ name: zeronym-latest-blocks
 # on the wrong chain or has stopped following it. Testnet is the early warning
 # and mainnet is the backstop.
 #
-# The hub pins its own zebra-chain, at the same version today. This builds the
-# shim's only.
+# The hub pins its own zebra-chain, at the same version today. This workflow
+# builds and checks the shim's pin only.
 #
 # The lightwalletd for each network is a repository variable, as `host:port`,
 # so that nobody's server is written into this file:
@@ -44,6 +44,10 @@ on:
       - "shim/src/**"
       - "shim/tests/latest_blocks.rs"
       - "shim/tests/common/**"
+      # Path crates the shim builds with: the gRPC types it decodes, and the
+      # patched webpki-roots its TLS hop to lightwalletd trusts.
+      - "proto/**"
+      - "vendor/**"
 
 permissions:
   contents: read
@@ -77,7 +81,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: latest-blocks
           workspaces: shim

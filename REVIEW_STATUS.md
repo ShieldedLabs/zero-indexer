@@ -2,9 +2,9 @@
 
 This tracker comes from the zero repository. Its commit hashes refer to zero.
 
-Tracking table. One row per finding, named by its file in
-`zeronym-22aa9851caf68-high-medium/`. Assessed against `origin/main` @ `7edc373`,
-with `hub-7` / `shim-11` live in clearnet mode.
+Tracking table. One row per finding, named by its file in the review deliverable
+`zeronym-22aa9851caf68-high-medium/`, which lives outside this repository.
+Assessed against `origin/main` @ `7edc373`, with `hub-7` / `shim-11` live in clearnet mode.
 
 ### Column meanings
 
@@ -15,7 +15,8 @@ with `hub-7` / `shim-11` live in clearnet mode.
 the vsock latency problem, blocks shipping Nym but is not live risk ·
 `process` = documentation, CI or deploy tooling rather than a running component.
 
-**Status** — `FIXED` (with commit) · `PARTIAL` (bounded, mechanism survives) ·
+**Status** — `FIXED` (with commit) · `MITIGATED` (with commit; risk reduced at no
+cost elsewhere, part of it remains) · `PARTIAL` (bounded, mechanism survives) ·
 `CLEAR` (obvious fix, not yet done) · `DECIDE` (needs a person) ·
 `MEASURE` (needs a number first) · `EXTERNAL` (cannot be fixed in this repo).
 
