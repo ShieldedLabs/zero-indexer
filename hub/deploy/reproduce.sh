@@ -23,7 +23,7 @@
 set -eu
 
 ZERO_ROOT="$(git rev-parse --show-toplevel)"
-HERE="$ZERO_ROOT/zeronym/hub/deploy"
+HERE="$ZERO_ROOT/hub/deploy"
 CTX="${CTX:-$(mktemp -d)/zero-indexer-hub-ctx}"
 OUT="${OUT:-$(dirname "$ZERO_ROOT")/zero-indexer-hub-reproduce}"
 

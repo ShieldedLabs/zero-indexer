@@ -17,7 +17,7 @@
 # phrase is being retired, the rule is that it may appear only inside quotation
 # marks -- a citation -- and never as the document's own voice.
 #
-# Run: sh zeronym/guards.sh   (from the repository root, or anywhere)
+# Run: sh guards.sh   (from the repository root, or anywhere)
 
 set -eu
 
@@ -189,7 +189,7 @@ fi
 # The only automated gate on the attested binaries must run on push, because
 # this branch takes direct pushes.
 for comp in hub shim; do
-	wf="../.github/workflows/zeronym-$comp-reproduce.yml"
+	wf=".github/workflows/zeronym-$comp-reproduce.yml"
 	if grep -qE '^  push:' "$wf"; then
 		pass "M26 $comp reproduce gate runs on push"
 	else

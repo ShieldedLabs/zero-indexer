@@ -32,7 +32,7 @@ OUT="${OUT:-$(dirname "$ZERO_ROOT")/zero-indexer-shim-build}"
 export DOCKER_BUILDKIT=1
 export SOURCE_DATE_EPOCH=1
 
-sh "$ZERO_ROOT/zeronym/shim/deploy/assemble.sh" "$CTX"
+sh "$ZERO_ROOT/shim/deploy/assemble.sh" "$CTX"
 mkdir -p "$OUT"
 
 # The recipe INSIDE the context, which assemble.sh took from `git archive HEAD`.

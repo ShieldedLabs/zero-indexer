@@ -27,8 +27,8 @@
 #
 #   export VULTR_API_KEY=...          # never put this in deploy.env
 #   caution login --qr --username <name>
-#   ./zeronym/deploy.sh               # uses ./deploy.env
-#   HUB_NYM=$(./zeronym/deploy.sh hub.env)   # deploy a hub, keep its Nym address
+#   ./deploy.sh               # uses ./deploy.env
+#   HUB_NYM=$(./deploy.sh hub.env)   # deploy a hub, keep its Nym address
 set -eu
 
 log()  { printf '==> %s\n' "$*" >&2; }
@@ -103,12 +103,12 @@ set_dns_record() {
 }
 
 ROOT=$(git rev-parse --show-toplevel)
-ASSEMBLE="$ROOT/zeronym/$COMPONENT/deploy/caution/assemble-caution.sh"
+ASSEMBLE="$ROOT/$COMPONENT/deploy/caution/assemble-caution.sh"
 [ -f "$ASSEMBLE" ] || die "no assemble script for COMPONENT=$COMPONENT ($ASSEMBLE)"
 
 # Assemble builds from HEAD; a dirty component tree would silently NOT be deployed.
-if [ -n "$(git -C "$ROOT" status --porcelain -- "zeronym/$COMPONENT")" ]; then
-  die "zeronym/$COMPONENT has uncommitted changes; commit them first (assemble uses git archive HEAD)"
+if [ -n "$(git -C "$ROOT" status --porcelain -- "$COMPONENT")" ]; then
+  die "$COMPONENT has uncommitted changes; commit them first (assemble uses git archive HEAD)"
 fi
 
 # ---------- build the assemble argument list ----------

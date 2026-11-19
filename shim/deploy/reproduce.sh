@@ -32,7 +32,7 @@
 set -eu
 
 ZERO_ROOT="$(git rev-parse --show-toplevel)"
-HERE="$ZERO_ROOT/zeronym/shim/deploy"
+HERE="$ZERO_ROOT/shim/deploy"
 CTX="${CTX:-$(mktemp -d)/zero-indexer-shim-ctx}"
 OUT="${OUT:-$(dirname "$ZERO_ROOT")/zero-indexer-shim-reproduce}"
 

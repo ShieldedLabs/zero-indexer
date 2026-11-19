@@ -19,7 +19,7 @@
 # with SHIM_BIN / HUB_BIN, or it looks in each crate's target/release.
 #
 #   cargo build --release --features mixnet-driver     # in shim/ and in hub/
-#   sh zeronym/smoke-local.sh
+#   sh smoke-local.sh
 #
 # The hub's mixnet client takes 30-90 s to register with a gateway; the shim's
 # likewise. The script polls /nym-status on both and only runs smoke once each

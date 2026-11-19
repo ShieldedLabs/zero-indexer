@@ -26,7 +26,7 @@
 # empty input. Do not reintroduce a pipeline here without pipefail, and do not
 # reintroduce pipefail.
 #
-# Usage: sh zeronym/shim/deploy/assemble.sh [dest-dir]
+# Usage: sh shim/deploy/assemble.sh [dest-dir]
 
 set -eu
 
@@ -43,7 +43,7 @@ set -eu
 umask 022
 
 ZERO_ROOT=$(git rev-parse --show-toplevel)
-HERE="$ZERO_ROOT/zeronym/shim/deploy"
+HERE="$ZERO_ROOT/shim/deploy"
 DEST=${1:-"$(dirname "$ZERO_ROOT")/zero-indexer-shim-ctx"}
 SHA=$(git -C "$ZERO_ROOT" rev-parse --short HEAD)
 
@@ -58,14 +58,13 @@ trap "rm -rf '$STAGE'" EXIT INT TERM
 # The crate. Its manifest names ../vendor/* in its [patch] sections, so the
 # context keeps shim/ and vendor/ as siblings at its root and the Containerfile
 # reconstructs them under /usr/src/app. No manifest is edited, here or in the
-# image. The archive takes the paths under zeronym/ from the commit HEAD, so
-# every entry carries the committer time, and --strip-components=1 drops the
-# zeronym/ level on extraction.
+# image. The archive reads the commit HEAD, so every entry carries the
+# committer time.
 #
 # This also carries deploy/ itself, which is how the build gets a commit-pinned
 # copy of its own Containerfile.
-git -C "$ZERO_ROOT" archive HEAD -o "$STAGE/shim.tar" zeronym/shim
-tar -xpf "$STAGE/shim.tar" --strip-components=1 -C "$DEST"
+git -C "$ZERO_ROOT" archive HEAD -o "$STAGE/shim.tar" shim
+tar -xpf "$STAGE/shim.tar" -C "$DEST"
 
 # The crypto-common [patch] target. shim/Cargo.toml unconditionally patches
 # nym's nym-upgrade-mode-check to this vendored slim copy (see its Cargo.toml),
@@ -75,18 +74,18 @@ tar -xpf "$STAGE/shim.tar" --strip-components=1 -C "$DEST"
 # Keep it in the reproduce workflow's `paths:` filter alongside the crate itself.
 # The two webpki-roots copies are [patch.crates-io] targets under the same rule.
 git -C "$ZERO_ROOT" archive HEAD -o "$STAGE/vendor.tar" \
-	zeronym/vendor/nym-upgrade-mode-check \
-	zeronym/vendor/webpki-roots-0.24.0 \
-	zeronym/vendor/webpki-roots-0.25.4
-tar -xpf "$STAGE/vendor.tar" --strip-components=1 -C "$DEST"
+	vendor/nym-upgrade-mode-check \
+	vendor/webpki-roots-0.24.0 \
+	vendor/webpki-roots-0.25.4
+tar -xpf "$STAGE/vendor.tar" -C "$DEST"
 
 # zero-indexer-proto, which shim/Cargo.toml names as `../proto`. Only the manifest
 # and the committed generated code go in: the generator under proto/gen/ and
 # the .proto sources take no part in the build.
 git -C "$ZERO_ROOT" archive HEAD -o "$STAGE/proto.tar" \
-	zeronym/proto/Cargo.toml \
-	zeronym/proto/src
-tar -xpf "$STAGE/proto.tar" --strip-components=1 -C "$DEST"
+	proto/Cargo.toml \
+	proto/src
+tar -xpf "$STAGE/proto.tar" -C "$DEST"
 
 # Also not needed: a rust-toolchain.toml. The shim's own lockfile is
 # authoritative, and the pinned pallet-rust digest is the toolchain.
@@ -97,7 +96,7 @@ tar -xpf "$STAGE/proto.tar" --strip-components=1 -C "$DEST"
 # The Containerfile is the entire definition of the build, so it is the one file
 # in the context most worth tampering with, and therefore the one that must come
 # from HEAD rather than from the working tree. It arrives via the `git archive
-# HEAD zeronym/shim` above, at $DEST/shim/deploy/Containerfile, and
+# HEAD shim` above, at $DEST/shim/deploy/Containerfile, and
 # every caller builds with `-f` pointed at THAT path. There is deliberately no
 # copy at the context root: a second, working-tree-sourced copy is exactly the
 # hole this closes.
@@ -117,12 +116,12 @@ else
 	# pinned to a commit and must not be published as one.
 	echo
 	echo "############################################################"
-	echo "# WARNING: zeronym/shim/deploy/ is NOT COMMITTED at $SHA."
+	echo "# WARNING: shim/deploy/ is NOT COMMITTED at $SHA."
 	echo "# Falling back to the working-tree copy of deploy/."
 	echo "# The context is therefore NOT fully commit-pinned, and a hash"
 	echo "# produced from it is not reproducible by a third party, who"
 	echo "# would check out $SHA and find no deploy/ at all."
-	echo "# Commit zeronym/shim/deploy/ before publishing any hash."
+	echo "# Commit shim/deploy/ before publishing any hash."
 	echo "############################################################"
 	echo
 	mkdir -p "$DEST/shim/deploy"

@@ -479,7 +479,7 @@ else
 fi
 
 ZERO_ROOT=$(git rev-parse --show-toplevel)
-HERE="$ZERO_ROOT/zeronym/shim/deploy/caution"
+HERE="$ZERO_ROOT/shim/deploy/caution"
 DEST=${DEST:-"$(dirname "$ZERO_ROOT")/$NAME"}
 SHA=$(git -C "$ZERO_ROOT" rev-parse HEAD)
 SHORT=$(git -C "$ZERO_ROOT" rev-parse --short HEAD)
@@ -490,8 +490,8 @@ SHORT=$(git -C "$ZERO_ROOT" rev-parse --short HEAD)
 # looking at. Everything about this deploy is an argument that a specific commit
 # is running inside the enclave, so silently deploying a different one is the
 # one failure that would matter most.
-if [ -n "$(git -C "$ZERO_ROOT" status --porcelain -- zeronym/shim)" ]; then
-	echo "error: zeronym/shim has uncommitted changes." >&2
+if [ -n "$(git -C "$ZERO_ROOT" status --porcelain -- shim)" ]; then
+	echo "error: shim has uncommitted changes." >&2
 	echo "       This assembles from git archive HEAD, so those changes would" >&2
 	echo "       NOT be deployed. Commit them first." >&2
 	exit 1
@@ -522,7 +522,7 @@ fi
 # The build context: the shim crate plus the vendor/ crates its [patch] sections
 # name. Identical to what the reproducibility check builds, because
 # it is the same script.
-sh "$ZERO_ROOT/zeronym/shim/deploy/assemble.sh" "$DEST"
+sh "$ZERO_ROOT/shim/deploy/assemble.sh" "$DEST"
 
 # Put them straight back, so the git steps at the bottom of this script see the
 # preserved history and commit on top of it (files the new context no longer
@@ -603,10 +603,10 @@ fi
 # deploy argues that a particular commit is running in the enclave; that claim
 # should be legible from the deployed artifact itself, not only from a shell
 # history somewhere.
-EXPECTED=$(cat "$ZERO_ROOT/zeronym/shim/deploy/EXPECTED_SHA256" 2>/dev/null || echo "unrecorded")
+EXPECTED=$(cat "$ZERO_ROOT/shim/deploy/EXPECTED_SHA256" 2>/dev/null || echo "unrecorded")
 cat > "$DEST/PROVENANCE" <<EOF
 zero-indexer-shim Caution enclave ('$NAME')
-source repo:     github.com/ShieldedLabs/zero
+source repo:     github.com/ShieldedLabs/zeronym
 serves:          $TLS_DOMAIN (TLS terminated in-enclave, ACME production)
 backend:         $BACKEND verified as $BACKEND_TLS
 diversion:       $(if [ -n "$HUB_NYM" ]; then echo "ON -> Nym mixnet, hub(s): $HUB_NYM"; elif [ -n "$HUB" ]; then echo "ON -> hub $HUB${HUB_TLS:+ verified as $HUB_TLS}"; else echo "OFF (forward-only, no privacy)"; fi)
@@ -615,9 +615,9 @@ source commit:   $SHA
 expected binary: $EXPECTED
 
 The binary inside this EIF should hash to the value above. Verify with:
-  git clone https://github.com/ShieldedLabs/zero && cd zero
+  git clone https://github.com/ShieldedLabs/zeronym && cd zeronym
   git checkout $SHA
-  sh zeronym/shim/deploy/reproduce.sh
+  sh shim/deploy/reproduce.sh
 EOF
 
 # A git identity is not configured in a fresh temp repo, and Caution deploys are

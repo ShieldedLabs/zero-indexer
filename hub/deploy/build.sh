@@ -1,6 +1,6 @@
 #!/bin/sh
 # Reproducible build of zero-indexer-hub, using the same deterministic docker
-# flags as the zeronym/shim recipe: type=oci + rewrite-timestamp +
+# flags as the shim recipe: type=oci + rewrite-timestamp +
 # force-compression, with SOURCE_DATE_EPOCH=1 exported into the shell so the
 # image packaging is timestamp-stable as well as the binary.
 #
@@ -28,7 +28,7 @@ OUT="${OUT:-$(dirname "$ZERO_ROOT")/zero-indexer-hub-build}"
 export DOCKER_BUILDKIT=1
 export SOURCE_DATE_EPOCH=1
 
-sh "$ZERO_ROOT/zeronym/hub/deploy/assemble.sh" "$CTX"
+sh "$ZERO_ROOT/hub/deploy/assemble.sh" "$CTX"
 mkdir -p "$OUT"
 
 # The recipe INSIDE the context, which assemble.sh took from `git archive HEAD`.

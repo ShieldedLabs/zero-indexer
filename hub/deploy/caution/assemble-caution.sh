@@ -183,7 +183,7 @@ echo "==> Let's Encrypt PRODUCTION for $TLS_DOMAIN: every push spends one of thi
 echo "    name's 5 weekly issuances. Iterate on throwaway names; see RESTARTS.md."
 
 ZERO_ROOT=$(git rev-parse --show-toplevel)
-HERE="$ZERO_ROOT/zeronym/hub/deploy/caution"
+HERE="$ZERO_ROOT/hub/deploy/caution"
 DEST=${DEST:-"$(dirname "$ZERO_ROOT")/$NAME"}
 SHA=$(git -C "$ZERO_ROOT" rev-parse HEAD)
 SHORT=$(git -C "$ZERO_ROOT" rev-parse --short HEAD)
@@ -438,8 +438,8 @@ INDEXERS_ENV=$INDEXERS
 # so a dirty tree does not corrupt the build; it corrupts the OPERATOR'S
 # understanding of it, by making them think they deployed the edit they are
 # looking at.
-if [ -n "$(git -C "$ZERO_ROOT" status --porcelain -- zeronym/hub)" ]; then
-	echo "error: zeronym/hub has uncommitted changes." >&2
+if [ -n "$(git -C "$ZERO_ROOT" status --porcelain -- hub)" ]; then
+	echo "error: hub has uncommitted changes." >&2
 	echo "       This assembles from git archive HEAD, so those changes would" >&2
 	echo "       NOT be deployed. Commit them first." >&2
 	exit 1
@@ -470,7 +470,7 @@ fi
 # The build context: the hub crate plus the vendor/ crates its [patch] sections
 # name. Identical to what the reproducibility check builds, because it is the
 # same script.
-sh "$ZERO_ROOT/zeronym/hub/deploy/assemble.sh" "$DEST"
+sh "$ZERO_ROOT/hub/deploy/assemble.sh" "$DEST"
 
 # Put them straight back, so the git steps at the bottom of this script see the
 # preserved history and commit on top of it (files the new context no longer
@@ -534,10 +534,10 @@ if grep -q '__[A-Z_]*__' "$DEST/caution.hcl"; then
 fi
 
 # Record what this was built from, inside the repo that gets pushed.
-EXPECTED=$(cat "$ZERO_ROOT/zeronym/hub/deploy/EXPECTED_SHA256" 2>/dev/null || echo "unrecorded")
+EXPECTED=$(cat "$ZERO_ROOT/hub/deploy/EXPECTED_SHA256" 2>/dev/null || echo "unrecorded")
 cat > "$DEST/PROVENANCE" <<EOF
 zero-indexer-hub Caution enclave ('$NAME')
-source repo:     github.com/ShieldedLabs/zero
+source repo:     github.com/ShieldedLabs/zeronym
 serves:          $TLS_DOMAIN (TLS terminated in-enclave, ACME production)
 broadcasts via:  $INDEXERS_ENV verified as $INDEXER_TLS
 network:         $NETWORK
@@ -547,9 +547,9 @@ source commit:   $SHA
 expected binary: $EXPECTED
 
 The binary inside this EIF should hash to the value above. Verify with:
-  git clone https://github.com/ShieldedLabs/zero && cd zero
+  git clone https://github.com/ShieldedLabs/zeronym && cd zeronym
   git checkout $SHA
-  sh zeronym/hub/deploy/reproduce.sh
+  sh hub/deploy/reproduce.sh
 EOF
 
 # A git identity is not configured in a fresh temp repo, and Caution deploys are
