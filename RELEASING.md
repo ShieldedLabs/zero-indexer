@@ -24,12 +24,13 @@ gh pr create --draft --base main --title "chore(release): cut vX.Y.Z" --fill
 
 ## 2. Pin the release commit
 
-The release is exactly the merge commit of the prep PR. Later commits on `main` stay out of it. Push a `release-vX.Y.Z` branch at that commit. GitHub dispatches a workflow on a branch or tag name, so the branch carries the SHA.
+The release is exactly the merge commit of the prep PR. Later commits on `main` stay out of it. Push a `release-vX.Y.Z` branch at that commit. The chain stops when no merged prep PR is found, since `git push origin ":ref"` with an empty SHA deletes the remote branch. GitHub dispatches a workflow on a branch or tag name, so the branch carries the SHA.
 
 ```sh
 git fetch origin
 SHA=$(gh pr list --state merged --head release-prep-vX.Y.Z --json mergeCommit --jq '.[0].mergeCommit.oid')
-git log -1 --oneline "$SHA"
+test -n "$SHA" &&
+git log -1 --oneline "$SHA" &&
 git push origin "$SHA:refs/heads/release-vX.Y.Z"
 ```
 

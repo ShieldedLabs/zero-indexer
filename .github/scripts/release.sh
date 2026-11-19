@@ -42,13 +42,15 @@ check_reproduce() {
 # Dispatch <workflow> on <ref>, wait for the run this dispatch created, and
 # watch it. Exit non-zero when the run fails. Print the run's headSha.
 dispatch() {
-  local wf=${1:?workflow} ref=${2:?ref} start head id
+  local wf=${1:?workflow} ref=${2:?ref} head seen id
   shift 2
   head=$(gh api "repos/{owner}/{repo}/commits/$ref" --jq .sha)
-  start=$(date -u +%FT%TZ)
+  # The dispatch returns no run id, so the new run is the one absent before it.
+  seen=$(gh run list --workflow "$wf" --commit "$head" --event workflow_dispatch \
+           --limit 100 --json databaseId --jq '[.[].databaseId] | join(",")')
   gh workflow run "$wf" --ref "$ref" "$@"
-  until id=$(gh run list --workflow "$wf" --commit "$head" --event workflow_dispatch --created ">=$start" \
-               --limit 1 --json databaseId --jq '.[0].databaseId // empty') && [ -n "$id" ]; do
+  until id=$(gh run list --workflow "$wf" --commit "$head" --event workflow_dispatch \
+               --limit 100 --json databaseId --jq "[.[].databaseId] - [$seen] | .[0] // empty") && [ -n "$id" ]; do
     sleep 5
   done
   gh run watch "$id" --exit-status
