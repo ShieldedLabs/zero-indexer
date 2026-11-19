@@ -337,7 +337,7 @@ module protocol {
   ///
   /// `NotFound` is the true answer for a transaction that is with a flush and
   /// not yet on the chain. That window is part of the lookup contract. The
-  /// implementation says so (`zeronym/hub/src/server.rs`, on `Hub::lookup`):
+  /// implementation says so (`hub/src/server.rs`, on `Hub::lookup`):
   ///
   /// > Note the flush-in-flight gap: `flush()` drains the queue before
   /// > `broadcast_batch` has reached the indexer, so a lookup in that window
@@ -536,7 +536,7 @@ module protocol {
   /// The accepted disclosure: an observer that knows a txid learns that
   /// it is queued at the hub. The hub withholds the bytes; it does not withhold
   /// the fact. The implementation leaves this open on purpose
-  /// (`zeronym/hub/src/server.rs`, in `Hub::lookup`):
+  /// (`hub/src/server.rs`, in `Hub::lookup`):
   ///
   /// > What this does NOT close: the 200-versus-NotFound distinction still
   /// > discloses that a given txid is queued here. Closing that too means

@@ -1,6 +1,6 @@
 # zero-indexer-hub as a standalone attested Nitro enclave on Caution.
 #
-# Sibling of zeronym/shim/deploy/caution/caution.hcl.tmpl. The shim's enclave
+# Sibling of shim/deploy/caution/caution.hcl.tmpl. The shim's enclave
 # hides migration content FROM the operator; this one is where that content
 # lands. The hub receives the diverted transaction in plaintext and broadcasts
 # it to the Zcash network, so of the two enclaves this is the one that most
@@ -11,9 +11,9 @@
 # build is deterministic: this commit yields this binary on any machine. The
 # attestation binds the enclave to a rebuild of the app-source repo named below,
 # which `caution verify` checks on PCR0, PCR1, PCR2 and the TLS binding. The
-# attestation carries no binary hash. Re-assembling from ShieldedLabs/zero and
+# attestation carries no binary hash. Re-assembling from ShieldedLabs/zeronym and
 # diffing against the app-source repo ties the two halves together; the auditor
-# procedure in zeronym/README.md (Usage, Auditors) lists every step.
+# procedure in README.md (Usage, Auditors) lists every step.
 
 enclave "__ENCLAVE_NAME__" {
   build {

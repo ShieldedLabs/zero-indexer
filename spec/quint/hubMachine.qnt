@@ -178,7 +178,7 @@ module hubMachine {
   /// and `offered` are forgotten together when the hub goes down, as its
   /// queue is: a hub cannot be held to an arrival it no longer knows of, and
   /// a restarted hub's entries start again at no attempts
-  /// (`zeronym/hub/src/queue.rs:631`).
+  /// (`hub/src/queue.rs:631`).
   var offered: Set[Payload]
   /// The payloads acknowledged as accepted that no node has judged since.
   var owed: Set[Payload]
@@ -280,7 +280,7 @@ module hubMachine {
   /// The heights a stale hub's free-running clock may read now: not behind
   /// the chain, and at most one flush interval ahead of it. The
   /// implementation relies on the first ("during a real stall blocks arrive
-  /// slower than this", `zeronym/hub/src/batcher.rs:86-89`) and enforces
+  /// slower than this", `hub/src/batcher.rs:86-89`) and enforces
   /// neither.
   def freeRunEstimates: Set[Height] =
     CLOCK_HEIGHTS.filter(estimate => height <= estimate and estimate <= height + cfg.params.flushInterval)

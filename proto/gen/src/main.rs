@@ -1,7 +1,7 @@
 //! Writes `../src/compact_formats.rs` and `../src/service.rs` from `../proto/`.
 //! Needs `protoc` on the PATH. Run from any directory:
 //!
-//!     cargo run --manifest-path zeronym/proto/gen/Cargo.toml
+//!     cargo run --manifest-path proto/gen/Cargo.toml
 
 use std::fs;
 use std::path::Path;

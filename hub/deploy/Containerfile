@@ -8,12 +8,12 @@
 # release can change emitted LLB, hence layer construction, hence the OCI
 # manifest digest. Bump this digest deliberately, with a hash re-baseline, and
 # update deploy/README.md's determinism-ingredient list when you do. This is the
-# exact digest the sibling zeronym/shim recipe pins; see its Containerfile for
+# exact digest the sibling shim recipe pins; see its Containerfile for
 # the full argument.
 
 # Reproducible StageX build of zero-indexer-hub: one static-musl binary.
 #
-# Sibling of zeronym/shim/deploy/Containerfile, which does the same for the
+# Sibling of shim/deploy/Containerfile, which does the same for the
 # shim. Same determinism ingredients (StageX bases pinned by digest,
 # SOURCE_DATE_EPOCH=1, codegen-units=1, crt-static, --build-id=none, committed
 # lockfile via --locked/--frozen, no BuildKit cache mounts).

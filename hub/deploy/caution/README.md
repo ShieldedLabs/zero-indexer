@@ -37,12 +37,12 @@ caution verify --attestation-url https://<domain>/attestation
 Run it from a FRESH CLONE of the public repo, never from a deploying tree.
 This is step 2 of the [auditor procedure](../../../README.md#usage). A PASS
 proves the enclave runs the tree its operator published; steps 3 to 5 tie that
-tree to `ShieldedLabs/zero`, check its parameters, and check the network path.
+tree to `ShieldedLabs/zeronym`, check its parameters, and check the network path.
 Require **all three PCRs and the TLS binding**. Do not accept a PCR2 match alone:
 hub and shim, two entirely different binaries, produce byte-identical PCR2
 (`21b9efbc...`), so PCR2 identifies the platform, not the code.
 
-Sibling of `zeronym/shim/deploy/caution/`. The shim's README covers the platform
+Sibling of `shim/deploy/caution/`. The shim's README covers the platform
 mechanics (in-enclave TLS termination on 8083, the FIDO2 login, Let's Encrypt
 issuance limits, debug-mode console); this covers only what differs for the
 hub.
@@ -69,7 +69,7 @@ hub.
 ## Assemble and deploy
 
 ```sh
-sh zeronym/hub/deploy/caution/assemble-caution.sh \
+sh hub/deploy/caution/assemble-caution.sh \
   --name zeronym-hub-1 \
   --indexers 203.0.113.10:443 \
   --indexer-tls indexer.example.org \
