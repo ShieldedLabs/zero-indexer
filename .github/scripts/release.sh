@@ -49,10 +49,14 @@ dispatch() {
   seen=$(gh run list --workflow "$wf" --commit "$head" --event workflow_dispatch \
            --limit 100 --json databaseId --jq '[.[].databaseId] | join(",")')
   gh workflow run "$wf" --ref "$ref" "$@"
-  until id=$(gh run list --workflow "$wf" --commit "$head" --event workflow_dispatch \
-               --limit 100 --json databaseId --jq "[.[].databaseId] - [$seen] | .[0] // empty") && [ -n "$id" ]; do
+  # A failing gh call exits through set -e; an empty result means "not yet".
+  for _ in $(seq 60); do
+    id=$(gh run list --workflow "$wf" --commit "$head" --event workflow_dispatch \
+           --limit 100 --json databaseId --jq "[.[].databaseId] - [$seen] | .[0] // empty")
+    [ -n "$id" ] && break
     sleep 5
   done
+  [ -n "$id" ] || { echo "no new $wf run for $ref after 5 minutes" >&2; exit 1; }
   gh run watch "$id" --exit-status
   gh run view "$id" --json headSha --jq '"headSha \(.headSha)"'
 }

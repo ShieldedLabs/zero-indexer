@@ -78,9 +78,11 @@ A live enclave runs the hash in \`PROVENANCE\` on its \`deploy-<app-id>\` tag. C
 EOF
 ```
 
-Read `notes.md`. It must start with the full changelog section. Then tag `$SHA` and create the release. The chain stops at the first command that fails, and the first one fails when `CHANGELOG.md` has no `vX.Y.Z` section at `$SHA`.
+Read `notes.md`. It must start with the full changelog section. Then tag `$SHA` and create the release. The chain stops at the first command that fails. The first three commands fail when a pin is empty or when `CHANGELOG.md` has no `vX.Y.Z` section at `$SHA`.
 
 ```sh
+test -n "$hub" &&
+test -n "$shim" &&
 grep -q '[^[:space:]]' changes.md &&
 git tag -a vX.Y.Z "$SHA" -m "zeronym vX.Y.Z" &&
 git push origin vX.Y.Z &&
