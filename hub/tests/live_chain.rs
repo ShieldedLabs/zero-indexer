@@ -12,6 +12,7 @@
 
 use std::net::SocketAddr;
 
+use zero_indexer_hub::admission;
 use zero_indexer_hub::chain::{ChainClient, Publish, TxLookup};
 use zero_indexer_hub::tip_guard;
 use zero_indexer_hub::tls::IndexerTls;
@@ -126,6 +127,8 @@ async fn reads_lookups_and_publish_verdicts_from_a_real_indexer() {
         TxLookup::NotFound => panic!("{addr} does not hold a mined mainnet transaction"),
     };
     assert_eq!(mined.len(), MINED_BYTES);
+    // The txid of the bytes, as the hub's own parser computes it.
+    assert_eq!(admission::inspect(&mined).txid.as_deref(), Some(MINED_TXID));
 
     // Any status but NOT_FOUND here is an error to the hub, and the shim then
     // fails every wallet lookup of a transaction that is not mined yet.
