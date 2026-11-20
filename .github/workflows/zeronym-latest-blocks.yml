@@ -8,19 +8,23 @@ name: zeronym-latest-blocks
 # 32 days later, and this check pointed at testnet would have been red for all
 # of them.
 #
-# Each job starts a forward-only shim in front of a real lightwalletd, reads 40
+# Each job starts a forward-only shim in front of a real indexer, reads 40
 # recent blocks through it, and fails on any transaction the classifier cannot
 # parse (shim/tests/latest_blocks.rs). It also fails if the server is
 # on the wrong chain or has stopped following it. Testnet is the early warning
 # and mainnet is the backstop.
 #
+# Mainnet has a second row: a ztreamer on a Zakura node. The shim's proxy
+# carries that server's streams, and the parser reads that node's blocks.
+#
 # The hub pins its own zebra-chain, at the same version today. This workflow
 # builds and checks the shim's pin only.
 #
-# The lightwalletd for each network is a repository variable, as `host:port`,
-# so that nobody's server is written into this file:
+# The indexer for each row is a repository variable, as `host:port`, so that
+# nobody's server is written into this file:
 #
 #   ZERONYM_MAINNET_LIGHTWALLETD
+#   ZERONYM_MAINNET_ZTREAMER
 #   ZERONYM_TESTNET_LIGHTWALLETD
 #
 # A job whose variable is unset FAILS. One that skipped would look exactly
@@ -58,22 +62,25 @@ concurrency:
 
 jobs:
   latest-blocks:
-    name: latest blocks (${{ matrix.network }})
+    name: latest blocks (${{ matrix.row }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
-      # One network failing says nothing about the other.
+      # One row failing says nothing about the others.
       fail-fast: false
       matrix:
         include:
           # `chain` is what the server's GetLightdInfo must report, so a
           # variable pointing at the wrong network fails the job.
-          - network: mainnet
+          - row: mainnet
             chain: main
-            lightwalletd: ${{ vars.ZERONYM_MAINNET_LIGHTWALLETD }}
-          - network: testnet
+            indexer: ${{ vars.ZERONYM_MAINNET_LIGHTWALLETD }}
+          - row: mainnet, ztreamer
+            chain: main
+            indexer: ${{ vars.ZERONYM_MAINNET_ZTREAMER }}
+          - row: testnet
             chain: test
-            lightwalletd: ${{ vars.ZERONYM_TESTNET_LIGHTWALLETD }}
+            indexer: ${{ vars.ZERONYM_TESTNET_LIGHTWALLETD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -88,18 +95,18 @@ jobs:
 
       # The shim dials a literal address and verifies the certificate against
       # the name, so the name is resolved here and both are handed to the test.
-      - name: Resolve the lightwalletd
+      - name: Resolve the indexer
         env:
-          LIGHTWALLETD: ${{ matrix.lightwalletd }}
-          NETWORK: ${{ matrix.network }}
+          INDEXER: ${{ matrix.indexer }}
+          ROW: ${{ matrix.row }}
         run: |
           set -euo pipefail
-          if [ -z "$LIGHTWALLETD" ]; then
-            echo "::error::no lightwalletd is set for $NETWORK; set the repository variable named at the top of this workflow"
+          if [ -z "$INDEXER" ]; then
+            echo "::error::no indexer is set for $ROW; set the repository variable named at the top of this workflow"
             exit 1
           fi
-          host=${LIGHTWALLETD%:*}
-          port=${LIGHTWALLETD##*:}
+          host=${INDEXER%:*}
+          port=${INDEXER##*:}
           addr=$(getent ahostsv4 "$host" | awk 'NR == 1 { print $1 }' || true)
           if [ -z "$addr" ]; then
             echo "::error::$host does not resolve"
