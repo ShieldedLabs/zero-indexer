@@ -1,0 +1,107 @@
+name: zeronym-hub-indexers
+
+# Does a real indexer still answer the hub as the hub reads it?
+#
+# The hub reads an indexer by gRPC status and by node text: the tip, a lookup
+# that finds a transaction and one that finds none, a rejected send, a copy of
+# a mined transaction, and the Orchard nullifiers since NU6.3. Both differ
+# between indexers and between nodes, and a release of either can change them.
+# The tests in hub/ that run on every push use a mock indexer, so only this
+# run shows such a change.
+#
+# Each job runs hub/tests/live_chain.rs against one mainnet indexer: a
+# lightwalletd, and a ztreamer on a Zakura node. One red row is a change in
+# that indexer or its node. Two red rows are a change in the hub.
+#
+# Each run sends the indexer two transactions that no node accepts: bytes that
+# do not parse, and a copy of a mined transaction.
+#
+# The indexers are repository variables, as `host:port`, so that nobody's
+# server is written into this file. zeronym-latest-blocks reads the same two:
+#
+#   ZERONYM_MAINNET_LIGHTWALLETD
+#   ZERONYM_MAINNET_ZTREAMER
+#
+# A job whose variable is unset FAILS. One that skipped would look exactly
+# like one that passed.
+
+on:
+  schedule:
+    # Daily, off the hour, after zeronym-latest-blocks at 05:23.
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+  # Only the files that read an indexer's replies, so that most hub changes
+  # send no traffic to someone's server. The schedule catches the rest.
+  pull_request:
+    paths:
+      - ".github/workflows/zeronym-hub-indexers.yml"
+      - "hub/Cargo.toml"
+      - "hub/Cargo.lock"
+      - "hub/src/chain.rs"
+      - "hub/src/spent.rs"
+      - "hub/src/tip_guard.rs"
+      - "hub/src/tls.rs"
+      - "hub/tests/live_chain.rs"
+      # Path crates the hub builds with: the gRPC types it decodes, and the
+      # patched webpki-roots its TLS hop to the indexer trusts.
+      - "proto/**"
+      - "vendor/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zeronym-hub-indexers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hub-indexers:
+    name: hub indexer (${{ matrix.row }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # One row failing says nothing about the other.
+      fail-fast: false
+      matrix:
+        include:
+          - row: mainnet, lightwalletd
+            indexer: ${{ vars.ZERONYM_MAINNET_LIGHTWALLETD }}
+          - row: mainnet, ztreamer
+            indexer: ${{ vars.ZERONYM_MAINNET_ZTREAMER }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: hub-indexers
+          workspaces: hub
+
+      # The hub dials a literal address and verifies the certificate against
+      # the name, so the name is resolved here and both are handed to the test.
+      - name: Resolve the indexer
+        env:
+          INDEXER: ${{ matrix.indexer }}
+          ROW: ${{ matrix.row }}
+        run: |
+          set -euo pipefail
+          if [ -z "$INDEXER" ]; then
+            echo "::error::no indexer is set for $ROW; set the repository variable named at the top of this workflow"
+            exit 1
+          fi
+          host=${INDEXER%:*}
+          port=${INDEXER##*:}
+          addr=$(getent ahostsv4 "$host" | awk 'NR == 1 { print $1 }' || true)
+          if [ -z "$addr" ]; then
+            echo "::error::$host does not resolve"
+            exit 1
+          fi
+          echo "ZIH_TEST_INDEXER=$addr:$port" >> "$GITHUB_ENV"
+          echo "ZIH_TEST_INDEXER_TLS=$host" >> "$GITHUB_ENV"
+
+      - name: Read the indexer as the hub does
+        working-directory: hub
+        run: cargo test --locked --test live_chain -- --ignored --nocapture
