@@ -259,9 +259,9 @@ module hubScenariosTest {
       .then(blocks(2))
       .expect(height == 8 and h.queued() == Set() and h.inFlight() == Set())
 
-  /// Finding 6, fixed by #85. The hub crashed in between and lost its queue,
+  /// Finding 6, fixed by ShieldedLabs/zero#85. The hub crashed in between and lost its queue,
   /// as K5 says. The resend is refused, not offered with one block of margin
-  /// where two are reserved, as it was before #85.
+  /// where two are reserved, as it was before ShieldedLabs/zero#85.
   run crashThenLateDuplicateTest =
     duplicateBehindTheBoundary(true)
       .expect(onTime == Set() and offered == Set())

@@ -71,9 +71,9 @@ Four audiences, four different answers.
 - **Wallet developers** have exactly one requirement, and it is a hard one: choose **aligned anchors and expiry heights** within a migration epoch, the [ZIP 318](https://zips.z.cash/zip-0318) behavior. A latest-anchor wallet is timestamped by its anchor, which re-links it inside the revealed batch and undoes the protection. Note also that a diverted broadcast is delayed up to ~8 minutes and the shim answers before the hub has confirmed receipt, so a wallet is told "accepted" ahead of the chain and a failed migration can fail silently. Anyone can cause that failure. The hub's queue lane for migrations costs a sender a real Halo2 proof per entry, so holding it full takes about 1 to 2 cores. Its lanes for transparent-only spends and for what it cannot verify (unparseable bytes, an unknown circuit era, an Orchard transaction with transparent inputs) are free to fill, for one to nine flush windows (up to about 75 minutes) per burst. Over the mixnet each refusal from a full lane is silent. The wallet keeps a ZIP 318 migration's notes locked until its expiry, 30 to 60 days out, so it must resend a migration that never confirms (resends are safe; the hub deduplicates on payload hash, and refuses a resend of a transaction already mined with `rejected`).
 - **Operators** run the shim in front of their indexer, and optionally a hub. Orchard-touching transactions, transparent-only spends and `GetTransaction` lookups stop being yours to see; everything else passes through as today.
 - **Auditors** verify an endpoint without trusting its operator. This is the full procedure, and every component guide links here. Caution's in-enclave Caddy holds the wallet-facing key and serves `/attestation` and `/nym-address`, outside `EXPECTED_SHA256`, so steps 2 and 4 trust it. Run all five steps on the shim, then on each hub it points at:
-  1. **Reproduce the build.** Two builds of a commit yield the same binary, which is what `EXPECTED_SHA256` records. Run `zeronym/<component>/deploy/reproduce.sh` at the commit the endpoint's `PROVENANCE` names.
+  1. **Reproduce the build.** Two builds of a commit yield the same binary, which is what `EXPECTED_SHA256` records. Run `<component>/deploy/reproduce.sh` at the commit the endpoint's `PROVENANCE` names.
   2. **Verify the attestation**, from a fresh clone of the public app-source repo: `caution verify --attestation-url https://<domain>/attestation` rebuilds the EIF and compares PCR0, PCR1 and PCR2 against the live attestation, plus the TLS certificate binding. Require **all three PCRs**. Hub and shim produce byte-identical PCR2, so PCR2 identifies the platform. PCR0 equals PCR1 within one enclave, so the three are one code value reported twice plus a constant.
-  3. **Re-assemble and diff.** `caution verify` rebuilds from the repository the OPERATOR nominated in the manifest, so a PASS proves the enclave runs *their* published tree. Re-run `assemble-caution.sh` from `github.com/ShieldedLabs/zero` at the `PROVENANCE` commit, with the parameters the published `caution.hcl` shows, and `diff -r` the result against the clone from step 2. Any difference is a finding.
+  3. **Re-assemble and diff.** `caution verify` rebuilds from the repository the OPERATOR nominated in the manifest, so a PASS proves the enclave runs *their* published tree. Re-run `assemble-caution.sh` from `github.com/ShieldedLabs/zeronym` at the `PROVENANCE` commit, with the parameters the published `caution.hcl` shows, and `diff -r` the result against the clone from step 2. Any difference is a finding.
   4. **Check each parameter.** The diff proves the assembler built the tree. The parameters are the operator's choice, so read each one in the published `caution.hcl`:
      - Diversion: `ZIS_REQUIRE_DIVERSION=true`, and exactly one hub transport after blank `ZIS_HUB_NYM` entries are dropped: a `ZIS_HUB` socket address, or one or more Nym addresses. The flag makes a shim with no hub refuse to start.
      - Clearnet hub: `ZIS_HUB` must be the address the hub's domain resolves to through `<app-id>.apps.caution.sh`, and `ZIS_HUB_TLS` must be that domain. The shim dials that address and checks the certificate name.
@@ -105,7 +105,7 @@ On **2026-08-11** a real Orchard to Ironwood migration traversed the full stack 
 
 ## Maintainers
 
-[Shielded Labs](https://shieldedlabs.net), in [`ShieldedLabs/zero`](https://github.com/ShieldedLabs/zero).
+[Shielded Labs](https://shieldedlabs.net), in [`ShieldedLabs/zeronym`](https://github.com/ShieldedLabs/zeronym).
 
 ## Thanks
 
@@ -113,7 +113,7 @@ Diagrams by [@zooko](https://github.com/zookoatshieldedlabs/zero-indexer-diagram
 
 ## Contributing
 
-Issues and pull requests go to [`ShieldedLabs/zero`](https://github.com/ShieldedLabs/zero). Cross-party questions still open with Caution are tracked in [`OPEN-QUESTIONS.md`](./OPEN-QUESTIONS.md).
+Issues and pull requests go to [`ShieldedLabs/zeronym`](https://github.com/ShieldedLabs/zeronym). Cross-party questions still open with Caution are tracked in [`OPEN-QUESTIONS.md`](./OPEN-QUESTIONS.md).
 
 Review of the architecture itself is the contribution most wanted right now. [Security](#security) lists what to attack first.
 
@@ -128,6 +128,6 @@ Licensed under either of
 
 at your option.
 
-This covers `zeronym/`. The vendored upstreams elsewhere in this repository (`zebra/`, `zaino/`, `zcashd/` and the rest) keep their own licenses.
+This covers the code in this repository. The vendored crates under `vendor/` keep their own licenses.
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

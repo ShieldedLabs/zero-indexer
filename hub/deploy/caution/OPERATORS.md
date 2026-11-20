@@ -115,7 +115,7 @@ the mode. **As of 2026-08-17 the deployed pair uses clearnet mode.**
 **Clearnet mode** (current):
 
 ```bash
-sh zeronym/hub/deploy/caution/assemble-caution.sh \
+sh hub/deploy/caution/assemble-caution.sh \
   --name        <enclave-name> \
   --indexers    <ipv4>:<port>[,<ipv4>:<port>...] \
   --indexer-tls <name-on-indexer-cert> \
@@ -134,7 +134,7 @@ mixnet client, no `--nym-egress`, and `/nym-status` will (correctly) report
 supports it — see the status block at the top):
 
 ```bash
-sh zeronym/hub/deploy/caution/assemble-caution.sh \
+sh hub/deploy/caution/assemble-caution.sh \
   --name        <enclave-name> \
   --indexers    <ipv4>:<port>[,<ipv4>:<port>...] \
   --indexer-tls <name-on-indexer-cert> \
@@ -230,7 +230,7 @@ the same script as the enclave push, or use `deploy.sh`, which does it.
 
 A PASS proves the enclave runs the tree in `zero-hub`. Steps 3 to 5 of the
 [auditor procedure](../../../README.md#usage) tie that tree to
-`ShieldedLabs/zero`, check its parameters, and check the network path.
+`ShieldedLabs/zeronym`, check its parameters, and check the network path.
 
 **Measured, 2026-08-17, from fresh public clones with the build cache cleared:**
 hub-6 (`zero-hub` @ `a1e703a8`) and shim-9 (`zero-shim` @ `cc70e9af`) both
@@ -287,7 +287,7 @@ redeploy, which is what a stable base layer should do.
 Publish the assembled tree to the `--app-source` repo — `main`, plus a tag on the
 deployed commit, since the manifest pins branch **and** commit and a branch tip
 moves. Caution's own git remote is push-only, so this published repo is the only
-route an auditor has to what you deployed. `zeronym/deploy.sh` does this
+route an auditor has to what you deployed. `deploy.sh` does this
 automatically on an attested deploy.
 
 ## Handing your address to shims

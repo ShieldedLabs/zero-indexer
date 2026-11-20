@@ -383,7 +383,7 @@ impl ChainClient {
                         Err("an indexer answered a lookup with an empty transaction".into())
                     }
                     Ok(raw) => Ok(TxLookup::Found {
-                        // `RawTransaction.data` is `Bytes` (see zeronym/proto/gen);
+                        // `RawTransaction.data` is `Bytes` (see proto/gen);
                         // copy it out because `TxLookup` feeds `Zeroizing`, which
                         // needs a buffer it owns exclusively.
                         data: raw.data.to_vec(),

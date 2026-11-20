@@ -134,8 +134,8 @@ module trustTest {
       .expect(s.repliedBodies(ObserverAddr) == Set(early) and s.operator == Set())
       .expect(not(queuedBytesConfidential))
 
-  /// Finding 8, fixed by #85. For a transaction that exists nowhere the
-  /// indexer answers "found, height 0, no body". Before #85 the hub forwarded
+  /// Finding 8, fixed by ShieldedLabs/zero#85. For a transaction that exists nowhere the
+  /// indexer answers "found, height 0, no body". Before ShieldedLabs/zero#85 the hub forwarded
   /// it and the wallet saw pending. The hub's client now reads it as the
   /// endpoint failing, and the wallet sees the lookup as unavailable.
   run indexerEmptyAnswerIsUnavailableTest =

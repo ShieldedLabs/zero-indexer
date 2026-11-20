@@ -55,12 +55,12 @@ is the vendor-independent path and stays dormant on Caution.
 
 ## Deploy (Shielded Labs' own)
 
-Assemble the deploy repository. This refuses a dirty `zeronym/shim` (it builds
+Assemble the deploy repository. This refuses a dirty `shim` (it builds
 from `git archive HEAD`) and rejects a non-literal-IPv4 backend. One enclave
 fronts exactly one indexer, so each backend gets its own app.
 
 ```bash
-sh zeronym/shim/deploy/caution/assemble-caution.sh \
+sh shim/deploy/caution/assemble-caution.sh \
   --name zeronym-shim-lwd \
   --backend 66.42.124.202:443 \
   --backend-tls lwd.shieldedinfra.net \
@@ -132,7 +132,7 @@ say this is the code" into something checkable. Third parties can run
 `caution verify --attestation-url https://<domain>/attestation` with no Caution
 account and no checkout. That is step 2 of the
 [auditor procedure](../../../README.md#usage). Steps 3 to 5 tie the published
-tree to `ShieldedLabs/zero`, check its parameters, and check the network path.
+tree to `ShieldedLabs/zeronym`, check its parameters, and check the network path.
 
 **Require all three PCRs to reproduce, plus the TLS certificate binding. Do NOT
 accept a PCR2 match alone.** Measured 2026-08-14, the attested hub and the

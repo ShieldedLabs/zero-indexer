@@ -1,6 +1,6 @@
 # Reproducible build: zero-indexer-shim
 
-A StageX build that turns `zeronym/shim` into one static-musl binary, designed
+A StageX build that turns `shim` into one static-musl binary, designed
 so that two independent builds of the same commit produce **byte-identical**
 output.
 
@@ -175,7 +175,7 @@ network and destroys determinism.
 ## The build context
 
 `assemble.sh` archives the crate and its `[patch]` targets out of `git archive
-HEAD` and strips the `zeronym/` level, so the context root holds:
+HEAD`, so the context root holds:
 
 ```
 shim/                                  the crate, including deploy/
@@ -195,7 +195,7 @@ own repository, so the move leaves the in-image paths and the hash unchanged.
 
 **The gRPC code is committed, generated code.** `zero-indexer-proto` has no
 build script and the image carries no protoc, so `proto/src/` compiles as it is.
-`zeronym/proto/gen` regenerates it on a developer machine, and the `proto` job
+`proto/gen` regenerates it on a developer machine, and the `proto` job
 in `zeronym-guards.yml` checks that the committed files match.
 
 **No cache mounts, ever, in this file.** See above. The sibling
@@ -228,24 +228,24 @@ flag list.
 
 ```sh
 # one deterministic build: binary + OCI image, prints both hashes
-sh zeronym/shim/deploy/build.sh
+sh shim/deploy/build.sh
 
 # the proof: two cold builds, compared to each other AND to EXPECTED_SHA256
-sh zeronym/shim/deploy/reproduce.sh
+sh shim/deploy/reproduce.sh
 ```
 
 Run these from anywhere inside the checkout. Artifacts land outside it
 (`../zero-indexer-shim-build/`) so that `git status` stays a clean signal. Override with `OUT` and `CTX`.
 
 Changing the recipe on purpose means re-baselining: confirm the new hash twice
-with `EXPECTED= sh zeronym/shim/deploy/reproduce.sh` (an empty `EXPECTED` skips
+with `EXPECTED= sh shim/deploy/reproduce.sh` (an empty `EXPECTED` skips
 the published-hash comparison for exactly that run), then update
 `EXPECTED_SHA256` and the recorded hashes below in the same commit. Those two
 must never drift apart.
 
 **Changing the compiled source means re-baselining too**, and that is the more
-common case: any edit under `zeronym/shim/src/`, to `Cargo.toml` or
-`Cargo.lock` (including the `zebra-chain` pin), or under `zeronym/proto/src/`, moves the binary and therefore the published hash.
+common case: any edit under `shim/src/`, to `Cargo.toml` or
+`Cargo.lock` (including the `zebra-chain` pin), or under `proto/src/`, moves the binary and therefore the published hash.
 Both 2026-08-01 re-baselines were of exactly that kind (two classifier rulings in
 one day), and both are written up below. Two traps the first one exposed, both
 worth knowing before you start.
@@ -258,6 +258,10 @@ reversed, and the second re-baseline explains what to do when the two cannot be
 ordered that way because the hash and the source have to land in one commit.
 
 ## Recorded hashes
+
+The dated records in this section come from the zero repository, where this
+crate was at `zeronym/`. Their paths, commits and run links refer to that
+repository.
 
 Do not populate this section by hand, and never with a plausible-looking
 placeholder. A wrong hash in an audit document is worse than a missing one. The
@@ -1094,7 +1098,7 @@ above.
     tree: the published hash is confirmed *for the wrong tree*. The commit-time
     run then **re-baselines** the published value rather than confirming it, and
     `EXPECTED_SHA256` must move in that same commit. `git status --porcelain
-    zeronym/shim/src zeronym/shim/Cargo.toml zeronym/shim/Cargo.lock` is the
+    shim/src shim/Cargo.toml shim/Cargo.lock` is the
     check that tells the two apart.
   - `reproduce.sh` **fails** and a compiled change is sitting in the working
     tree, with `EXPECTED_SHA256` already re-baselined ahead of the commit: the
@@ -1125,13 +1129,13 @@ scripts are POSIX sh and run under dash).
 > `git archive HEAD` cannot see it.
 
 ```sh
-git clone https://github.com/ShieldedLabs/zero && cd zero
+git clone https://github.com/ShieldedLabs/zeronym && cd zeronym
 git checkout <the commit recorded below>
 
 # Assemble the context (git archive HEAD, so your working tree is irrelevant)
 # and build twice from cold, comparing the two against each other and against
 # deploy/EXPECTED_SHA256.
-sh zeronym/shim/deploy/reproduce.sh
+sh shim/deploy/reproduce.sh
 ```
 
 `reproduce.sh` exits non-zero on any of: the two builds disagreeing with each
@@ -1141,7 +1145,7 @@ To compare against the published hash by hand, without the wrapper:
 
 ```sh
 CTX=$(mktemp -d)/ctx
-sh zeronym/shim/deploy/assemble.sh "$CTX"
+sh shim/deploy/assemble.sh "$CTX"
 
 # Note the -f path: the Containerfile from INSIDE the context, which came out of
 # `git archive HEAD`. Not your working-tree copy. That is what makes "I rebuilt
@@ -1167,7 +1171,7 @@ If your hash differs, check these in order:
    Containerfile, `--no-cache` will not clear it and the build is no longer cold.
 3. **A `rust-toolchain.toml`.** There is none today, and adding one whose channel
    differs from `pallet-rust:1.96.0` makes rustup fetch a different compiler.
-4. **An edit under `zeronym/proto/src/`.** The generated gRPC code there is
+4. **An edit under `proto/src/`.** The generated gRPC code there is
    compiled into the binary.
 5. **The frontend pin.** `# syntax=docker/dockerfile:1.26.0@sha256:ecfaec9e…`
    on line 1 of the Containerfile. A different frontend can emit different LLB.
@@ -1179,7 +1183,7 @@ If your hash differs, check these in order:
    it is the one that actually bit us. `git archive HEAD` ignores your working
    tree entirely, so an edit under `src/` that you have not committed is simply
    absent from the build, and every script here will confirm the hash of the
-   code you did **not** change. `git status --porcelain zeronym/shim` before you
+   code you did **not** change. `git status --porcelain shim` before you
    trust a result. Note the asymmetry with item 6: a modified `Containerfile`
    gets you a warning, a modified `classify.rs` gets you silence.
 

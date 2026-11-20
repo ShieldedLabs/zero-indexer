@@ -29,7 +29,7 @@
 //!    backend's fails OPEN: the backend acts on a request the classifier never
 //!    saw. Concretely, the vendored tonic server Zaino is built from dispatches
 //!    on `req.uri().path()` alone, with no HTTP-method guard
-//!    (`zeronym/proto/src/service.rs`, in `CompactTxStreamerServer`), so a `GET` to
+//!    (`proto/src/service.rs`, in `CompactTxStreamerServer`), so a `GET` to
 //!    the `SendTransaction` path reaches its `send_transaction` handler. An
 //!    earlier version of [`route_for`] also required `POST`, which made exactly
 //!    that request bypass the classifier. See [`Route`].
@@ -1330,7 +1330,7 @@ mod tests {
     #[test]
     fn send_transaction_path_matches_the_generated_client() {
         // The literal the vendored tonic client sends
-        // (zeronym/proto/src/service.rs, `send_transaction`). If these ever
+        // (proto/src/service.rs, `send_transaction`). If these ever
         // disagree the shim silently stops intercepting.
         assert_eq!(
             SEND_TRANSACTION,

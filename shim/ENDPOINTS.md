@@ -211,14 +211,14 @@ is timing, wallet behaviour, the new trust shift, and batch size.
   forwards, and its prevout names the migration. Example: a wallet deshields
   Orchard to its own t-address, then auto-shields that output into Ironwood.
   Catching it needs the parent, which the stateless shim does not hold. It sits
-  with the conceded transparent-pool leak in `zeronym/README.md`.
+  with the conceded transparent-pool leak in `README.md`.
 - **Fresh-address pre-announcement.** A wallet that queries a brand-new deshield
   destination *before* the migration confirms leaks the address and near-real
   submission time. Wallet-behaviour requirement (do not pre-announce), not a shim
   fix, unless the wallet is routing every address query to the Zeronym indexer.
 - **Batch size.** Every intercept above is correct and the migrant's cover is
   still only the flush's batch size. A size-1 flush is no cover at all. This is the
-  hub's problem (see `zeronym/hub/REVIEW.md`), restated here so the shim's
+  hub's problem (see `hub/REVIEW.md`), restated here so the shim's
   correctness is not mistaken for sufficiency.
 
 ## Open decisions for humans

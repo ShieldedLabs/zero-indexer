@@ -101,7 +101,7 @@ The permitted refusals are now: AEAD or frame failure, byte budget or lane full,
 
 **Replaces.** "Shims prefer a primary hub for batch density and fail over to a standby only when primary is unreachable."
 
-**AMENDED 2026-11-02 (#104): the two hubs no longer hold identical queues.** Admission now reads per-hub state: the burn set (which each hub's own publish verdicts fill and each restart empties), the verification slots, and how full each lane is. Every shim still submits to every hub, so each hub still sees every migration and the reasoning above stands. The published sets can differ by the entries one hub refused, so a duplicate is no longer always a duplicate of the whole batch.
+**AMENDED 2026-11-02 (ShieldedLabs/zero#104): the two hubs no longer hold identical queues.** Admission now reads per-hub state: the burn set (which each hub's own publish verdicts fill and each restart empties), the verification slots, and how full each lane is. Every shim still submits to every hub, so each hub still sees every migration and the reasoning above stands. The published sets can differ by the entries one hub refused, so a duplicate is no longer always a duplicate of the whole batch.
 
 ### 7. Add a hub-to-shim `Confirmed { request_nonce, txid, height }` message over the existing Nym tunnel. The shim must never issue a txid-specific query to its backing indexer for a diverted migration, and must additionally intercept `GetTransaction`, `GetTaddressTxids` and `GetMempoolTx(Exclude)` for diverted txids and serve them from the bytes it already holds, including after confirmation.
 

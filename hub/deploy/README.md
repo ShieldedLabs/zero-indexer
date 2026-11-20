@@ -1,9 +1,9 @@
 # Reproducible build: zero-indexer-hub
 
-A StageX build that turns `zeronym/hub` into one static-musl binary, designed so
+A StageX build that turns `hub` into one static-musl binary, designed so
 that two independent builds of the same commit produce **byte-identical** output.
 
-Sibling of `zeronym/shim/deploy/`, which does the same for the shim. Read that
+Sibling of `shim/deploy/`, which does the same for the shim. Read that
 README first for the full determinism argument; this one records only what
 differs for the hub.
 
@@ -51,7 +51,7 @@ other.
 2. The StageX base digests (`pallet-rust`, `core-busybox`).
 3. `RUSTFLAGS`, `SOURCE_DATE_EPOCH`, `CARGO_HOME`, `WORKDIR`.
 4. The committed `Cargo.lock`, which pins `zebra-chain` from crates.io by
-   checksum, and `zeronym/proto/src/`. The vendored
+   checksum, and `proto/src/`. The vendored
    `nym-upgrade-mode-check` (the crypto-common `[patch]` target) and the two
    `webpki-roots` copies (the eMudhra-distrust `[patch.crates-io]` targets) are
    archived too.
@@ -67,7 +67,7 @@ other.
 ## Reproduce it
 
 ```sh
-sh zeronym/hub/deploy/reproduce.sh
+sh hub/deploy/reproduce.sh
 ```
 
 Two cold `linux/amd64` builds (Rosetta on an arm64 Mac is fine), compared to each
