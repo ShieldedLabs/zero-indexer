@@ -9,7 +9,7 @@ including streaming responses and gRPC trailers. The one exception is
 parser, and **logs**. Nothing else about the call changes.
 
 The design, the threat model and the honest limits live in
-[`zeronym/README.md`](../README.md). This crate is one afternoon of it.
+[`README.md`](../README.md). This crate is one afternoon of it.
 
 ## What this PoC deliberately does NOT do
 

@@ -55,7 +55,7 @@ module scenariosTest {
 
   /// A TEX payment from Orchard funds: both legs go to the hub and are
   /// published together. The second leg's prevout names the first, and the
-  /// operator sees neither (#94).
+  /// operator sees neither (ShieldedLabs/zero#94).
   run texSecondLegIsDivertedTest =
     initBaseline
       .then(submitTo(0, early))

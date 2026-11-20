@@ -19,7 +19,7 @@ it is, and needs no `protoc`.
 Install `protoc` 36.2, the version the CI job pins, then run:
 
 ```sh
-cargo run --locked --manifest-path zeronym/proto/gen/Cargo.toml
+cargo run --locked --manifest-path proto/gen/Cargo.toml
 ```
 
 The `proto` job in `zeronym-guards.yml` runs this command and fails when the

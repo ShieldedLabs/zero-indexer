@@ -74,7 +74,7 @@ module protocol {
     { id: "plain", txid: Some("plain"), created: 1, expiry: Some(9), class: OtherShielded, spends: Set(), oversize: false, actions: 2 }
   /// The second leg of the TEX payment `early` starts: transparent parts only,
   /// and its one prevout is `early`'s single-use output. The shim diverts it
-  /// by its shape (#94).
+  /// by its shape (ShieldedLabs/zero#94).
   pure val tex: Payload =
     { id: "tex", txid: Some("tex"), created: 2, expiry: Some(9), class: TransparentOnly, spends: Set("early"), oversize: false, actions: 0 }
   /// An auto-shield of `late`'s output into Ironwood: a transparent spend
@@ -101,7 +101,7 @@ module protocol {
   pure val byzIndexer = { ...baseline, roles: { ...allHonest, indexer: Byzantine } }
 
   /// The baseline, and a shielded spend of a diverted transaction's output:
-  /// the residual #94 leaves (K10).
+  /// the residual ShieldedLabs/zero#94 leaves (K10).
   pure val shieldedSpend = { ...baseline, payloads: baseline.payloads.union(Set(autoShield)) }
 
   // ========================================================================
@@ -337,7 +337,7 @@ module protocol {
   ///
   /// `NotFound` is the true answer for a transaction that is with a flush and
   /// not yet on the chain. That window is part of the lookup contract. The
-  /// implementation says so (`zeronym/hub/src/server.rs`, on `Hub::lookup`):
+  /// implementation says so (`hub/src/server.rs`, on `Hub::lookup`):
   ///
   /// > Note the flush-in-flight gap: `flush()` drains the queue before
   /// > `broadcast_batch` has reached the indexer, so a lookup in that window
@@ -536,7 +536,7 @@ module protocol {
   /// The accepted disclosure: an observer that knows a txid learns that
   /// it is queued at the hub. The hub withholds the bytes; it does not withhold
   /// the fact. The implementation leaves this open on purpose
-  /// (`zeronym/hub/src/server.rs`, in `Hub::lookup`):
+  /// (`hub/src/server.rs`, in `Hub::lookup`):
   ///
   /// > What this does NOT close: the 200-versus-NotFound distinction still
   /// > discloses that a given txid is queued here. Closing that too means

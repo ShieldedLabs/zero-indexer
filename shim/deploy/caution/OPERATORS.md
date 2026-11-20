@@ -67,7 +67,7 @@ Full rationale in `deploy/caution/README.md`.
   `IngressRoute` with `scheme: h2c`; the `serversscheme` annotation is silently
   ignored and every call 500s.
 - **A DNS name you control** for wallets.
-- A checkout of `github.com/ShieldedLabs/zero` at the commit you are auditing.
+- A checkout of `github.com/ShieldedLabs/zeronym` at the commit you are auditing.
 
 ## Where the enclave runs
 
@@ -88,7 +88,7 @@ Create an empty **public** git repository first (the assembled context gets
 published there; verification depends on it), then:
 
 ```bash
-sh zeronym/shim/deploy/caution/assemble-caution.sh \
+sh shim/deploy/caution/assemble-caution.sh \
   --name        <enclave-name> \
   --backend     <indexer-ipv4>:<port> \
   --backend-tls <name-on-indexer-cert> \
@@ -136,7 +136,7 @@ git push caution main    # boots the enclave AND orders the certificate
 Create the record **before** the push: the push is what orders the certificate,
 and ACME can only validate a name that already resolves. Every push spends one of
 that hostname's **5 weekly production issuances** (there is no staging on this
-path), so a push into missing DNS burns one. `zeronym/deploy.sh` automates this
+path), so a push into missing DNS burns one. `deploy.sh` automates this
 in the right order.
 
 Expect the first ACME attempt to fail with `NXDOMAIN` and **recover on its own in
@@ -166,7 +166,7 @@ grpcurl -import-path lightwalletd/walletrpc -proto service.proto \
   <tls-domain>:443 cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo
 
 caution verify                         # from the assembled directory
-sh zeronym/shim/deploy/reproduce.sh    # source reproduces deploy/EXPECTED_SHA256
+sh shim/deploy/reproduce.sh    # source reproduces deploy/EXPECTED_SHA256
 ```
 
 No proto handy? A raw gRPC probe needs neither grpcurl nor a checkout:
@@ -198,7 +198,7 @@ checkout of yours.
 
 `caution verify` is step 2 of the [auditor procedure](../../../README.md#usage).
 A PASS proves the enclave runs the tree in your app-source repo. Steps 3 to 5
-tie that tree to `ShieldedLabs/zero`, check its parameters (the hub it diverts
+tie that tree to `ShieldedLabs/zeronym`, check its parameters (the hub it diverts
 to included), and check the network path.
 
 Caveats:
