@@ -9,6 +9,8 @@ under `zero-indexer`, through v29.
 
 ## Unreleased
 
+## v0.1.0 - 2026-11-20
+
 ### Security
 
 - The shim, hub and probe take `webpki-roots` 1.0.10 and
