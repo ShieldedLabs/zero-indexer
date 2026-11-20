@@ -117,6 +117,8 @@ Issues and pull requests go to [`ShieldedLabs/zero`](https://github.com/Shielded
 
 Review of the architecture itself is the contribution most wanted right now. [Security](#security) lists what to attack first.
 
+Releases follow [`RELEASING.md`](./RELEASING.md).
+
 ## License
 
 Licensed under either of
