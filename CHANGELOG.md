@@ -9,6 +9,8 @@ under `zero-indexer`, through v29.
 
 ## Unreleased
 
+## v0.1.0 - 2026-11-20
+
 ### Security
 
 - The shim, hub and probe take `webpki-roots` 1.0.10 and
@@ -221,6 +223,13 @@ under `zero-indexer`, through v29.
   window. Other bytes it cannot parse are handled as before. The per-send log
   line says `diverted_in_production=false` for it, and for a retired format
   that is refused.
+- The hub budgets each flush by ZIP 218 shielded cost. From NU7 a block holds
+  330 units, and a flush carries at most 280: 248 for the proven and
+  transparent lanes, and 32 for the unverified lane. Admission answers
+  `queue_full` when a transaction would take its lane over that budget. After
+  each relay, the hub holds the queue until the tip clears the reorg allowance
+  and the mining margin. Set the hub's stop grace period to at least 10
+  minutes, because the final flush on shutdown waits for that hold.
 
 ### CI
 
@@ -228,3 +237,8 @@ under `zero-indexer`, through v29.
   blocks through a shim and fails if the `zebra-chain` the shim pins cannot
   parse a transaction in them. NU7 was live on testnet for 32 days before it
   broke parsing here on mainnet, and nothing was looking.
+- `zeronym-hub-indexers` runs daily. It runs `hub/tests/live_chain.rs`
+  against two mainnet indexers, a lightwalletd and a ztreamer on a Zakura node.
+  The hub's tests on each push use a mock indexer, so this run is where a
+  change in an indexer's replies shows. `zeronym-latest-blocks` also reads
+  mainnet through the ztreamer.
