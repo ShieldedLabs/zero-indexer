@@ -1,5 +1,6 @@
 //! Integration check against a real indexer. Ignored by default: it needs a
-//! reachable `CompactTxStreamer`, which CI does not have.
+//! reachable `CompactTxStreamer`. The daily `zeronym-hub-indexers` workflow
+//! runs it against mainnet indexers.
 //!
 //! Plaintext h2c against a local indexer:
 //!   ZIH_TEST_INDEXER=127.0.0.1:9067 cargo test --test live_chain -- --ignored --nocapture
