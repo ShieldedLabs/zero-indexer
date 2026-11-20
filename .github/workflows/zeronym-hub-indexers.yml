@@ -57,6 +57,10 @@ concurrency:
 jobs:
   hub-indexers:
     name: hub indexer (${{ matrix.row }})
+    # A pull request from a fork runs the fork's code, and this job hands that
+    # code the indexer's address. Such a run is skipped, and the schedule
+    # covers what it would have checked.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
