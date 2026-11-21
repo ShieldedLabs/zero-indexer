@@ -23,6 +23,8 @@ Under the [ZIP 307](https://zips.z.cash/zip-0307) light-client protocol a wallet
 
 `zero-indexer` targets the server-side and network-metadata adversaries in Taylor Hornby's [wallet app threat model](https://zcash.readthedocs.io/en/latest/rtd_pages/wallet_threat_model.html), not the wallet-local concerns that model assigns to the wallet.
 
+To report a vulnerability, follow [`SECURITY.md`](./SECURITY.md).
+
 **Protected**
 
 - **Broadcast contents.** The operator no longer terminates the wallet's TLS. The key is born inside the enclave, so an Orchard-touching transaction crosses the parent host as ciphertext it has no key for, rather than as plaintext at its indexer. The attestation makes this checkable by an auditor: on the auditor's own connection it binds the certificate to the enclave reached. The key lives in Caution's in-enclave Caddy. A wallet checks the certificate against the public CAs only. The operator holds the wallet-facing DNS zone, so it can obtain a second valid certificate for the name and, from a network position on a wallet's path, serve it to that wallet while auditors reach the enclave. Certificate Transparency logs that certificate publicly, among the routine ones each enclave restart orders.
@@ -38,14 +40,6 @@ Under the [ZIP 307](https://zips.z.cash/zip-0307) light-client protocol a wallet
 - **Whether a txid sits in a hub's queue.** A hub answers a lookup for a queued txid with "found, height 0" to anyone who asks, so anyone holding a candidate txid learns whether it waits in the queue. A Nym hub answers on the mixnet only. A clearnet hub also answers on `POST /transaction`, because its shims look up there.
 - **The hub hop on clearnet.** A clearnet shim dials the literal hub address in its measured config, and the name on the hub's certificate is its whole check of the hub. A party with a network position on that path and a certificate for the name reads every migration in plaintext. On a managed app that position belongs to Caution or AWS; in BYOC it belongs to whoever runs the parent host at either end. Whoever holds the hub's DNS zone can obtain the certificate. Auditor step 4 checks that the address routes to the attested hub at audit time. At run time the shim checks the name only. In Nym mode the mixnet encrypts each frame to the key in the hub's Nym address, and that key is born in the hub's enclave.
 - **Physical security and the platform are delegated to AWS and Caution.** Nitro's memory isolation and hardware root of trust keep the operator out of the enclave, so the guarantees above hold against everyone except AWS. Caution runs the platform: the parent host of a managed app, and the in-enclave Caddy that terminates the wallet's TLS. Caddy comes from Caution's framework, outside `EXPECTED_SHA256` and outside this repository's review. Which PCR measures it is an open question for Caution.
-
-### Reporting
-
-Report vulnerabilities through the Shielded Labs security disclosure group on Signal, the same channel as the rest of the Zero distribution:
-
-<https://signal.group/#CjQKICZtmwnx-qJlNzqu9ACZno_s9hMZhELfjod-KBGXVXxUEhA-p8Ai5BgwAVVllZvDV6tb>
-
-That group is a triage waiting room. Once admitted, say only that you have a report and do not post details there; you will be moved into a private group with the relevant people to disclose, then removed from the waiting room.
 
 ## Background
 
