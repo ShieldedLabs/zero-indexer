@@ -31,7 +31,7 @@ git fetch origin
 SHA=$(gh pr list --state merged --head release-prep-vX.Y.Z --json mergeCommit --jq '.[0].mergeCommit.oid')
 test -n "$SHA" &&
 git log -1 --oneline "$SHA" &&
-git push origin "$SHA:refs/heads/release-vX.Y.Z"
+git push origin "${SHA}:refs/heads/release-vX.Y.Z"
 ```
 
 Delete `release-vX.Y.Z` after the release is out.
@@ -55,35 +55,39 @@ Both lines must say `ok`. On `STOP`, dispatch that workflow on `release-vX.Y.Z` 
 
 ## 4. Tag and release
 
-The release body is the changelog section plus the reproducible-build pins from the two `EXPECTED_SHA256` files. A live enclave's hash lives in `PROVENANCE` on its `deploy-<app-id>` tag.
+The release body has two sections. `## Changes` holds one summary line and a link to the version's section of `CHANGELOG.md` at the tag. `## Reproducible-build pins` holds the two `EXPECTED_SHA256` values. A live enclave's hash lives in `PROVENANCE` on its `deploy-<app-id>` tag.
+
+The commands write `${SHA}` with braces. In zsh, `$SHA:h` and `$SHA:s` are modifiers, so `"$SHA:hub/..."` breaks.
 
 ```sh
-hub=$(git show "$SHA:hub/deploy/EXPECTED_SHA256")
-shim=$(git show "$SHA:shim/deploy/EXPECTED_SHA256")
-git show "$SHA:CHANGELOG.md" | awk -v tag="vX.Y.Z" '
-  $0 ~ "^## "tag"([[:space:]]|$)" {on=1; next}
-  /^## / {on=0}
-  on' > changes.md
-cp changes.md notes.md
-cat >> notes.md <<EOF
+hub=$(git show "${SHA}:hub/deploy/EXPECTED_SHA256")
+shim=$(git show "${SHA}:shim/deploy/EXPECTED_SHA256")
+heading=$(git show "${SHA}:CHANGELOG.md" | awk -v h="## vX.Y.Z " 'index($0, h) == 1 {print substr($0, 4); exit}')
+# GitHub's heading anchor: lower case, punctuation other than - and _ removed, spaces as -.
+anchor=$(printf '%s' "$heading" | tr '[:upper:]' '[:lower:]' | tr -dc 'a-z0-9 _-' | tr ' ' '-')
+cat > notes.md <<EOF
+## Changes
+
+SUMMARY See [vX.Y.Z in CHANGELOG.md](https://github.com/ShieldedLabs/zeronym/blob/vX.Y.Z/CHANGELOG.md#${anchor}).
 
 ## Reproducible-build pins
 
-These are the reproducible-build pins at [vX.Y.Z](https://github.com/ShieldedLabs/zeronym/tree/vX.Y.Z) (\`$SHA\`).
+These are the reproducible-build pins at [vX.Y.Z](https://github.com/ShieldedLabs/zeronym/tree/vX.Y.Z) (\`${SHA}\`).
 
-- Hub \`$hub\` ([EXPECTED_SHA256](https://github.com/ShieldedLabs/zeronym/blob/$SHA/hub/deploy/EXPECTED_SHA256))
-- Shim \`$shim\` ([EXPECTED_SHA256](https://github.com/ShieldedLabs/zeronym/blob/$SHA/shim/deploy/EXPECTED_SHA256))
+- Hub \`${hub}\` ([EXPECTED_SHA256](https://github.com/ShieldedLabs/zeronym/blob/${SHA}/hub/deploy/EXPECTED_SHA256))
+- Shim \`${shim}\` ([EXPECTED_SHA256](https://github.com/ShieldedLabs/zeronym/blob/${SHA}/shim/deploy/EXPECTED_SHA256))
 
 A live enclave runs the hash in \`PROVENANCE\` on its \`deploy-<app-id>\` tag. Check that file to see what a given endpoint runs.
 EOF
 ```
 
-Read `notes.md`. It must start with the full changelog section. Then tag `$SHA` and create the release. The chain stops at the first command that fails. The first three commands fail when a pin is empty or when `CHANGELOG.md` has no `vX.Y.Z` section at `$SHA`.
+Edit `notes.md` and replace `SUMMARY` with one sentence, for example the number of changes and of security fixes. Then tag `$SHA` and create the release. The chain stops at the first command that fails. The first four commands fail when a pin or the `vX.Y.Z` section is missing at `$SHA`, or when `SUMMARY` is still in `notes.md`.
 
 ```sh
 test -n "$hub" &&
 test -n "$shim" &&
-grep -q '[^[:space:]]' changes.md &&
+test -n "$heading" &&
+! grep -q SUMMARY notes.md &&
 git tag -a vX.Y.Z "$SHA" -m "zeronym vX.Y.Z" &&
 git push origin vX.Y.Z &&
 gh release create vX.Y.Z --verify-tag --title "zeronym vX.Y.Z" --notes-file notes.md
