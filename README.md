@@ -1,10 +1,10 @@
 # zero-indexer
 
-Privacy for Zcash light wallets: an attested front-end that stops pool-crossing transactions from leaking your IP to the peer-to-peer network.
+An attested front end for Zcash light-wallet indexers. It keeps a wallet's IP address away from the peer-to-peer network when the wallet spends Orchard funds.
 
-Under the [ZIP 307](https://zips.z.cash/zip-0307) light-client protocol a wallet talks to an indexer over clearnet, so the operator sees its source IP and the timing of everything it does. `zero-indexer` is a Shielded Labs product that stops transactions that contain Orchard actions from leaking a user's IP to the peer-to-peer network. Against the operator and the user's ISP, it hides the user among the matching transactions in each batch.
+A light wallet sends its transactions to an indexer over [ZIP 307](https://zips.z.cash/zip-0307). The indexer operator sees the wallet's IP address and the time of each request. With `zero-indexer`, an attested shim in front of the indexer sends Orchard transactions to a hub, and the hub publishes them in batches. Against the operator and the wallet's ISP, a wallet hides among the matching transactions in its batch. Today a batch holds one transaction, so that protection is weak (see [Security](#security)).
 
-**The long-term vision** is a wallet-facing private indexer serving queries, not just broadcasts, over Nym, terminated inside an attested enclave, with PIR added later as a hardware-independent layer.
+The long-term goal is a private indexer for all wallet traffic, over Nym and inside an attested enclave, with private information retrieval (PIR) added later.
 
 ## Table of Contents
 
@@ -21,97 +21,101 @@ Under the [ZIP 307](https://zips.z.cash/zip-0307) light-client protocol a wallet
 
 ## Security
 
-`zero-indexer` targets the server-side and network-metadata adversaries in Taylor Hornby's [wallet app threat model](https://zcash.readthedocs.io/en/latest/rtd_pages/wallet_threat_model.html), not the wallet-local concerns that model assigns to the wallet.
+The adversaries are the server-side and network-metadata adversaries in Taylor Hornby's [wallet app threat model](https://zcash.readthedocs.io/en/latest/rtd_pages/wallet_threat_model.html). Wallet-local threats belong to the wallet in that model, and are out of scope here. To report a vulnerability, follow [`SECURITY.md`](./SECURITY.md).
 
-To report a vulnerability, follow [`SECURITY.md`](./SECURITY.md).
+The enclaves run on AWS Nitro through [Caution](https://caution.co). The *parent host* is the AWS instance that runs an enclave. Caution runs it for a managed app. In bring-your-own-cloud (BYOC) mode, which we advise against, the operator runs it.
 
 **Protected**
 
-- **Broadcast contents.** The operator no longer terminates the wallet's TLS. The key is born inside the enclave, so an Orchard-touching transaction crosses the parent host as ciphertext it has no key for, rather than as plaintext at its indexer. The attestation makes this checkable by an auditor: on the auditor's own connection it binds the certificate to the enclave reached. The key lives in Caution's in-enclave Caddy. A wallet checks the certificate against the public CAs only. The operator holds the wallet-facing DNS zone, so it can obtain a second valid certificate for the name and, from a network position on a wallet's path, serve it to that wallet while auditors reach the enclave. Certificate Transparency logs that certificate publicly, among the routine ones each enclave restart orders.
-- **Source IP, against the hub and the peer-to-peer network.** The hub publishes the transaction, so the peer-to-peer network sees the hub's node as its origin. In clearnet mode the hub sees only the shim's IP; in Nym mode the mixnet hides the shim's IP from the hub. Both hold at any volume. Against the operator and the wallet's ISP, the link from IP to transaction is batching anonymity, under Not protected below.
-- **`GetTransaction`.** The shim routes every lookup to the hub, so the operator cannot watch a wallet fetch back the transaction it just diverted. This moves the lookup to the hub rather than making it private outright. On a queue miss the hub asks its own indexers, so this holds only while an operator other than the shim's backend runs them. A hub that looks up through the backend's own indexer hands it every txid that misses the queue, timed against the wallet's other queries.
-- **The second leg of a TEX payment.** Paying a ZIP 320 (TEX) address from shielded funds takes two transactions, and the second names the first by its prevout. The shim diverts every transparent-only spend, so the second leg goes to the hub with the first. The cost is latency: every transparent-only send waits for a batch, including TEX payments funded from Ironwood.
+- **Broadcast contents.** The wallet's TLS key is generated and kept inside the enclave, in Caution's Caddy server. The parent host carries a diverted transaction as ciphertext. The certificate is bound to the enclave in the attestation, and an auditor can check that binding on the auditor's own connection. A wallet checks only the public CAs. The operator controls the DNS zone, so it can get a second valid certificate and serve it from a position on a wallet's path. Certificate Transparency logs publish that certificate, among the routine ones each enclave restart orders.
+- **Source IP, against the hub and the peer-to-peer network.** The hub publishes the transaction, so the network sees the hub's node as the origin. In clearnet mode the hub sees only the shim's IP address, and in Nym mode the mixnet hides even that. Both hold at any volume.
+- **`GetTransaction`.** The shim sends every lookup to the hub, so the operator cannot watch a wallet fetch the transaction it just diverted. The lookup is still visible at the hub. On a queue miss the hub asks its own indexers, so this holds only while a different operator runs them.
+- **The second leg of a TEX payment.** A payment from shielded funds to a [ZIP 320](https://zips.z.cash/zip-0320) (TEX) address takes two transactions, and the second names the first. The shim diverts every transparent-only spend, so when the first leg is a migration, both legs go to the hub. The cost is latency: every transparent-only spend waits for a batch.
 
 **Not protected**
 
-- **Which transaction a wallet's IP sent, against the operator and the wallet's ISP, at today's volume.** On a managed app, Caution's parent host sees each wallet's connection from IP X, and the size and time of each upload. The operator sees the queries the enclave forwards to its indexer, with their timing. A diverted transaction is the `SendTransaction` missing among them, so the operator learns that a wallet diverted a transaction at time T. The wallet's transparent address set (next item) identifies that wallet to the operator. To learn IP X as well, the operator must interpose on the wallet's path; it holds the DNS zone, and auditor step 5 makes that interposition observable. In BYOC, which we advise against, the operator runs the parent host and sees IP X directly. On the clearnet hop the shim also opens a fresh connection to the hub and uploads one 64 KiB frame inside the wallet's open request, which marks the same event a second time at the parent host. The wallet's ISP sees the upload to the shim too. The hub publishes at the next 20-block flush, and anyone can pick out a flush on chain (`hub/REVIEW.md`, "The batch is publicly identifiable"). At today's batch size of one, that flush holds X's transaction alone, so the parent host and the ISP link IP X to it, and the operator links the wallet to it. In a larger flush the anonymity set is at most the transactions that match X's in size, shape, anchor and expiry, minus any the operator submitted itself. Diverted transactions differ in size: the shim's own fixtures are 11,994, 6,010 and 102 bytes. Nym's cover traffic removes the second marker and leaves the first. This link weakens only as more matching transactions share each flush.
-- **Transparent-pool queries.** `GetTaddressTxids`, `GetTaddressBalance` and `GetAddressUtxos` are not intercepted and still reach the operator. Say the consequence plainly: the reference light-client SDK hands the operator's own indexer the wallet's whole transparent address set, and from those the operator can recover a diverted transaction's txid **and its value**. So "the operator does not learn the amount" is not a claim this design supports for a wallet that touches the transparent pool. The same holds for a shielded transaction that spends a diverted transaction's transparent output, such as auto-shielding a deshield: it forwards, and its prevout names the diverted transaction.
-- **The size of a wallet's submission.** TLS terminates inside the enclave, so the operator never sees plaintext -- but TLS hides content, not length. The wallet-to-shim leg is unpadded, so the operator observes `|tx|` and the instant it arrived. Transaction sizes are public on-chain, so that pair can be matched against the published batch, and for an unusually sized transaction it identifies which member is which. The shim-to-hub leg was padded to a fixed frame in August 2026; this leg was not, and it cannot be fixed in the shim, because padding has to happen at the sender.
-- **Whether a txid sits in a hub's queue.** A hub answers a lookup for a queued txid with "found, height 0" to anyone who asks, so anyone holding a candidate txid learns whether it waits in the queue. A Nym hub answers on the mixnet only. A clearnet hub also answers on `POST /transaction`, because its shims look up there.
-- **The hub hop on clearnet.** A clearnet shim dials the literal hub address in its measured config, and the name on the hub's certificate is its whole check of the hub. A party with a network position on that path and a certificate for the name reads every migration in plaintext. On a managed app that position belongs to Caution or AWS; in BYOC it belongs to whoever runs the parent host at either end. Whoever holds the hub's DNS zone can obtain the certificate. Auditor step 4 checks that the address routes to the attested hub at audit time. At run time the shim checks the name only. In Nym mode the mixnet encrypts each frame to the key in the hub's Nym address, and that key is born in the hub's enclave.
-- **Physical security and the platform are delegated to AWS and Caution.** Nitro's memory isolation and hardware root of trust keep the operator out of the enclave, so the guarantees above hold against everyone except AWS. Caution runs the platform: the parent host of a managed app, and the in-enclave Caddy that terminates the wallet's TLS. Caddy comes from Caution's framework, outside `EXPECTED_SHA256` and outside this repository's review. Which PCR measures it is an open question for Caution.
+- **Which transaction a wallet's IP sent, against the operator and the wallet's ISP, at today's volume.** At today's batch size of one, a flush holds one wallet's transaction alone. The parent host and the ISP can link the wallet's IP address to it, and the operator can link the wallet to it.
+  - The parent host sees each connection's source IP, and the size and time of each upload. On the clearnet hop, the parent host also sees the shim's 64 KiB upload to the hub, a second marker of the same event. Nym's cover traffic removes that second marker.
+  - The operator sees the queries that the enclave forwards to its indexer. From the missing `SendTransaction`, it learns that a wallet diverted a transaction at time T. The operator identifies the wallet by its transparent addresses (next item). To learn the IP address too, the operator must interpose on the wallet's path. An auditor can detect that in step 5.
+  - Anyone can identify a flush on chain (`hub/REVIEW.md`, "The batch is publicly identifiable"). In a larger flush, the anonymity set is at most the transactions that match in size, shape, anchor and expiry, less any the operator submitted.
+- **Transparent-pool queries.** The shim forwards `GetTaddressTxids`, `GetTaddressBalance` and `GetAddressUtxos` to the operator. Through these calls, the reference light-client SDK sends the operator the wallet's full transparent address set. From that set, the operator can recover a diverted transaction's txid **and its value**. The same applies to a shielded transaction that spends a diverted transaction's transparent output, for example auto-shielding after a deshield.
+- **The size of a wallet's submission.** TLS hides the content and shows the length. The wallet-to-shim leg has no padding, so the parent host and the ISP see `|tx|` and its arrival time. Sizes are public on chain, so a transaction of unusual size is easy to find in its batch. Only the wallet can pad this leg. The shim-to-hub leg has a fixed frame size.
+- **Whether a txid is in a hub's queue.** A hub answers a lookup for a queued txid with "found, height 0", to anyone. A Nym hub answers on the mixnet only. A clearnet hub also answers on `POST /transaction`, where its shims send lookups.
+- **The hub hop on clearnet.** A clearnet shim dials the hub address in its measured config, and checks only the name on the hub's certificate. A party on that path with a certificate for the name can read every diverted transaction. That position belongs to Caution or AWS on a managed app, and to the parent-host operator at either end in BYOC. Whoever controls the hub's DNS zone can get the certificate. An auditor ties the address to the attested hub in step 4, but only at audit time. In Nym mode, the Nym client encrypts each frame to a key that the hub's enclave generated.
+- **Physical security and the platform are delegated to AWS and Caution.** Nitro keeps the operator out of the enclave, so the guarantees above hold against everyone except AWS. Caution runs the parent host of a managed app and the Caddy server that ends the wallet's TLS. Caddy is outside `EXPECTED_SHA256` and outside this repository's review. Which PCR measures it is an open question for Caution.
 
 ## Background
 
-A light wallet delegates chain validation to an indexer over [ZIP 307](https://zips.z.cash/zip-0307). The protocol gets note privacy right and metadata privacy wrong: trial decryption is client-side, so the indexer never learns which notes are yours, but it terminates your connection, so it sees your source IP, the timing of every request, and the addresses you query.
+A light wallet reads the chain through an indexer. Trial decryption happens on the wallet, so the indexer never learns which notes are the wallet's. But the indexer ends the wallet's connection, so it sees the source IP, the time of each request, and the addresses the wallet queries.
 
 ![Current Zcash transaction publication: wallets connect over TLS directly to one of a handful of indexers, each publishing to the mempool](./images/zcash_current_publication.svg)
 
-That termination is the attack. A transaction crossing a value-pool boundary reveals the movement in cleartext on-chain, so an operator holds both halves: *IP X broadcast at time T*, and *a pool-crossing transaction moving Y appeared at time T*. Joining them links **IP address to on-chain transaction to balance**. The shielded cryptography does not prevent it: the leak is in the transport. It works retrospectively too, since the chain is permanent.
+A transaction that crosses a value-pool boundary shows the movement on chain. So the operator holds both halves of a link: *IP X broadcast at time T*, and *a pool-crossing transaction moving Y appeared at time T*. With both, the operator can link **IP address to on-chain transaction to balance**. The leak is in the transport, where the shielded cryptography has no reach. The chain is permanent, so the link also works after the fact.
 
-The acute case is the Orchard to Ironwood migration, which Zooko called the worst privacy-loss event in Zcash history: **mandatory**, **mass**, and **concentrated** into a bounded window. Those properties also make migrations the right thing to protect first: a non-urgent mass can be batched.
+The acute case is the migration from Orchard to Ironwood. Zooko called it the worst privacy-loss event in Zcash history: it is **mandatory**, **mass**, and **concentrated** in a bounded window. A large, non-urgent set of transactions can be batched, so migrations are where this project starts. Here, a *migration* is any transaction with Orchard actions.
 
 ## Install
 
-For **indexer operators**, who are the people who deploy this. The shim is a drop-in: it sits behind your existing public URL, in front of your existing unmodified indexer, and wallets need no reconfiguration.
+Indexer operators deploy `zero-indexer`. The shim runs behind the operator's existing public URL and in front of the existing, unmodified indexer. Wallets need no change.
 
-The operator runbook is [`shim/deploy/caution/OPERATORS.md`](./shim/deploy/caution/OPERATORS.md), which covers prerequisites, deploy, verify and the config reference end to end. A third-party operator has run it start to finish.
+Follow the operator runbook, [`shim/deploy/caution/OPERATORS.md`](./shim/deploy/caution/OPERATORS.md). It covers prerequisites, deployment, verification and the config reference. A third-party operator has completed it end to end.
 
 ## Usage
 
-Four audiences, four different answers.
-
-- **Wallet users** install nothing and change no setting. Point your wallet at the same endpoint URL as before.
-- **Wallet developers** have exactly one requirement, and it is a hard one: choose **aligned anchors and expiry heights** within a migration epoch, the [ZIP 318](https://zips.z.cash/zip-0318) behavior. A latest-anchor wallet is timestamped by its anchor, which re-links it inside the revealed batch and undoes the protection. Note also that a diverted broadcast is delayed up to ~8 minutes and the shim answers before the hub has confirmed receipt, so a wallet is told "accepted" ahead of the chain and a failed migration can fail silently. Anyone can cause that failure. The hub's queue lane for migrations costs a sender a real Halo2 proof per entry, so holding it full takes about 1 to 2 cores. Its lanes for transparent-only spends and for what it cannot verify (unparseable bytes, an unknown circuit era, an Orchard transaction with transparent inputs) are free to fill, for one to nine flush windows (up to about 75 minutes) per burst. Over the mixnet each refusal from a full lane is silent. The wallet keeps a ZIP 318 migration's notes locked until its expiry, 30 to 60 days out, so it must resend a migration that never confirms (resends are safe; the hub deduplicates on payload hash, and refuses a resend of a transaction already mined with `rejected`).
-- **Operators** run the shim in front of their indexer, and optionally a hub. Orchard-touching transactions, transparent-only spends and `GetTransaction` lookups stop being yours to see; everything else passes through as today.
-- **Auditors** verify an endpoint without trusting its operator. This is the full procedure, and every component guide links here. Caution's in-enclave Caddy holds the wallet-facing key and serves `/attestation` and `/nym-address`, outside `EXPECTED_SHA256`, so steps 2 and 4 trust it. Run all five steps on the shim, then on each hub it points at:
-  1. **Reproduce the build.** Two builds of a commit yield the same binary, which is what `EXPECTED_SHA256` records. Run `<component>/deploy/reproduce.sh` at the commit the endpoint's `PROVENANCE` names.
-  2. **Verify the attestation**, from a fresh clone of the public app-source repo: `caution verify --attestation-url https://<domain>/attestation` rebuilds the EIF and compares PCR0, PCR1 and PCR2 against the live attestation, plus the TLS certificate binding. Require **all three PCRs**. Hub and shim produce byte-identical PCR2, so PCR2 identifies the platform. PCR0 equals PCR1 within one enclave, so the three are one code value reported twice plus a constant.
-  3. **Re-assemble and diff.** `caution verify` rebuilds from the repository the OPERATOR nominated in the manifest, so a PASS proves the enclave runs *their* published tree. Re-run `assemble-caution.sh` from `github.com/ShieldedLabs/zeronym` at the `PROVENANCE` commit, with the parameters the published `caution.hcl` shows, and `diff -r` the result against the clone from step 2. Any difference is a finding.
-  4. **Check each parameter.** The diff proves the assembler built the tree. The parameters are the operator's choice, so read each one in the published `caution.hcl`:
-     - Diversion: `ZIS_REQUIRE_DIVERSION=true`, and exactly one hub transport after blank `ZIS_HUB_NYM` entries are dropped: a `ZIS_HUB` socket address, or one or more Nym addresses. The flag makes a shim with no hub refuse to start.
-     - Clearnet hub: `ZIS_HUB` must be the address the hub's domain resolves to through `<app-id>.apps.caution.sh`, and `ZIS_HUB_TLS` must be that domain. The shim dials that address and checks the certificate name.
-     - Nym hub: every `ZIS_HUB_NYM` entry must equal the `/nym-address` of a hub you verified. Each entry is offered every migration and under backpressure the tail of the list can miss it.
-     - Hub indexers: this shim's `ZIS_BACKEND` operator must differ from the operator of each `ZIH_INDEXERS` endpoint and `ZIH_INDEXER_TLS` name of every hub it lists. The evidence for operator identity is out of band. The hub looks a txid up there on a queue miss.
-     - `ZIS_DIAG` unset, and `debug.enabled = false`.
-  5. **Resolve the domain** and confirm it points at the Caution-managed target for the app id in the published artefacts. One `dig` turns an invisible layer-4 interposition into an observable one, because every other check on this list passes through a plain TCP forwarder. In BYOC the operator runs the host behind that target, so this step proves less there.
-
-Two things this list used to get wrong (corrected 2026-08-19): there is no binary hash inside any attestation to "compare hashes" against, and Certificate Transparency is not the certificate check -- the attestation binds the TLS certificate directly, which is stronger and is what `caution verify` checks.
+- **Wallet users** change nothing.
+- **Wallet developers** must choose **aligned anchors and expiry heights** within a migration epoch, as in [ZIP 318](https://zips.z.cash/zip-0318). A transaction with the latest anchor is dated by that anchor, and an observer can use the date to find it in the published batch. Also plan for these behaviors:
+  - The hub holds a diverted transaction for up to about 8 minutes.
+  - The shim reports success before the hub confirms receipt, so a migration can fail silently. Anyone can cause this by filling a hub queue lane ([hub failure modes](./hub/deploy/caution/OPERATORS.md#known-failure-modes)).
+  - The wallet must resend a migration that does not confirm, because its notes stay locked until expiry, 30 to 60 days later. Resends are safe: the hub deduplicates them, and answers `rejected` for a transaction that is already mined.
+- **Operators** run the shim, and can also run a hub. Migrations, transparent-only spends and `GetTransaction` lookups leave the operator's view. All other traffic passes through.
+- **Auditors** verify an endpoint with no trust in its operator. This is the full procedure, and each component guide links here. Caddy serves `/attestation` and `/nym-address` and is outside `EXPECTED_SHA256`, so steps 2 and 4 trust it. Do all five steps on the shim, then on each hub that the shim lists:
+  1. **Reproduce the build.** Run `<component>/deploy/reproduce.sh` at the commit that the endpoint's `PROVENANCE` names. The binary hash must match `EXPECTED_SHA256`.
+  2. **Verify the attestation.** In a fresh clone of the public app-source repo, run `caution verify --attestation-url https://<domain>/attestation`. It rebuilds the EIF, compares PCR0, PCR1 and PCR2 with the live attestation, and checks the TLS certificate binding. Require **all three PCRs**. (PCR0 and PCR1 are one code value within an enclave. PCR2 is the platform, the same for hub and shim.)
+  3. **Re-assemble and diff.** `caution verify` rebuilds from the repository the operator named, so a PASS means only that the enclave runs the operator's tree. Run `assemble-caution.sh` from `github.com/ShieldedLabs/zeronym` at the `PROVENANCE` commit, with the parameters in the published `caution.hcl`. Then `diff -r` the result against the clone from step 2. Each difference is a finding.
+  4. **Check each parameter** in the published `caution.hcl`. The operator chose them.
+     - Diversion: `ZIS_REQUIRE_DIVERSION=true`, and exactly one hub transport after blank `ZIS_HUB_NYM` entries are dropped: a `ZIS_HUB` socket address, or one or more Nym addresses.
+     - Clearnet hub: `ZIS_HUB` is the address the hub's domain resolves to through `<app-id>.apps.caution.sh`, and `ZIS_HUB_TLS` is that domain.
+     - Nym hub: each `ZIS_HUB_NYM` entry equals the `/nym-address` of a hub you verified.
+     - Hub indexers: the operator of this shim's `ZIS_BACKEND` is different from the operator of each `ZIH_INDEXERS` endpoint and `ZIH_INDEXER_TLS` name, on every hub the shim lists. Evidence of operator identity is out of band.
+     - `ZIS_DIAG` is unset, and `debug.enabled = false`.
+  5. **Resolve the domain** with `dig`, and confirm that it points at the Caution-managed target for the app id in the published artifacts. All the other checks pass through a plain TCP forwarder, so a layer-4 interposition is invisible to them. With this step, an auditor can see it. In BYOC the operator runs that target, so this step is weaker.
 
 ## How it works
 
-![Zero-indexer transaction publication: wallets reach a shim inside a TEE at each organisation, which routes Orchard-touching transactions over the Nym mixnet to a hub in its own TEE, which publishes to the mempool](./images/zcash_zero_indexer_publication.svg)
+![Zero-indexer transaction publication: wallets reach a shim inside a TEE at each organization, which routes Orchard-touching transactions over the Nym mixnet to a hub in its own TEE, which publishes to the mempool](./images/zcash_zero_indexer_publication.svg)
 
-Green boxes are attested enclaves, the only things that see a migration in cleartext. Each shim links its mixnet client **in-process**, so there is no separate Nym node to draw; the mixnet is outside both enclaves because the mix nodes are untrusted, and wallets never speak it. The grey edge to each operator's indexer is the **pass-through path**, plaintext as today; the green edge is the **diverted path**. Both organisations' migrations enter the mixnet and one leaves: the hub cannot tell which shim a migration came from.
+Green boxes are attested enclaves, the only places a migration is in cleartext. The grey edge to each indexer is the **pass-through path**, as before. The green edge is the **diverted path**. Each shim runs its Nym client in-process, and wallets never use the mixnet. Migrations from both organizations leave the mixnet as one stream, so the hub cannot tell which shim sent which.
 
-- **`zero-indexer-shim`**, an attested router behind the operator's existing URL, classifies `SendTransaction` on presence rather than value: `is_orchard_touching(tx) := tx.has_orchard_shielded_data()`. NU6.3 closed Orchard to new value, so anyone still spending it has held those notes since before activation: the spend is the identifying event. Classification happens *before* the upstream dial, so a diverted transaction never opens a TCP connection to the operator's indexer, and anything unparseable fails safe: diverted or refused, never forwarded. It holds no per-migration state.
-- **`zero-indexer-hub`** queues diverted transactions from every shim in-enclave and publishes them on a strict 20-block cadence, shuffled and in parallel. Flushes fire on block height only: a count-based trigger would let an attacker isolate a target by flooding. After each relay the cadence also waits out a holdoff of 14 blocks, so one batch can be mined before the next. It admits a migration only if it provably survives the next flush, making urgency unreachable rather than handled. It refuses a migration past its lane's share of the per-flush shielded-cost budget, so one batch fits in one block.
+- **`zero-indexer-shim`** is an attested router behind the operator's existing URL. It routes each `SendTransaction` by the pools it touches, and ignores amounts and destinations:
+
+  ```text
+  divert(tx) := is_orchard_touching(tx) || is_transparent_only_spend(tx)
+  ```
+
+  Orchard has taken no new value since NU6.3. So any Orchard spend is from notes held since before activation, and the spend itself is the identifying event. The shim classifies before it dials the indexer. With a hub configured, it diverts or refuses a transaction it cannot parse, and never forwards it. It keeps no per-migration state.
+- **`zero-indexer-hub`** queues diverted transactions from every shim. Every 20 blocks it publishes them, shuffled and in parallel. Only block height starts a flush, because with a count trigger an attacker could flood the queue to isolate a target. The hub admits a migration only if it is still valid after the next flush. It refuses a migration past its lane's share of the flush budget, so one batch fits in one block.
 
 ## Status
 
-**Deployed:** classify and divert; the stateless shim; hub queue, batch and flush; `GetTransaction` served by the hub; attested Nitro enclaves (since 2026-08-01, first third-party operator 2026-08-10); in-enclave TLS termination; and the **Nym transport**, running on the public mixnet since 2026-08-14, with the hub publishing its address at `GET /nym-address`.
+**Deployed:** classification and diversion; the hub queue and flush; `GetTransaction` at the hub; attested Nitro enclaves with TLS inside (since 2026-08-01, first third-party operator 2026-08-10); and the Nym transport on the public mixnet (since 2026-08-14).
 
-**Partly built:** multi-hub REPLICATION -- not failover, which is forbidden (Taylor Hornby's rule, 2026-08-17: replicate, never fail over; `REVIEW.md` #6 independently). A shim choosing its hub by health hands an attacker the ability to isolate one migration by briefly downing a hub during its retry. This line described failover and also described the code wrongly (corrected 2026-08-19): the shim does not rotate which hub a submit targets, it offers every migration to EVERY configured hub, unconditionally, within one 5 s dispatch budget shared by the whole list, and tells the wallet success after the first hand-off. Under mixnet backpressure a wallet can hear success while only part of the list holds its migration. A submit sweeps the address list from the first entry every time. The rotating cursor applies to lookups only: it varies where a lookup's sweep STARTS, so lookup load spreads across a multi-homed hub's gateways. What is genuinely missing is holding a migration across requests.
+**Partly built: multi-hub replication.** The shim offers each migration to every configured hub, and never fails over. If it chose a hub by health, an attacker could take a hub down during one migration's retry to isolate it. The shim reports success after the first hand-off, so under mixnet backpressure only part of the list may hold the migration. Still to build: holding a migration across requests.
 
-**Designed, no code yet:** a shim-side check of the hub's attestation on the hub hop (the STEVE handshake, or RA-TLS), the encrypt-to-hub-key layer for the clearnet hop, the keymaker quorum and consortium governance, and confirmation tracking. In Nym mode the mixnet already encrypts each frame to the key in the hub's Nym address, which the hub's enclave holds.
+**Designed, no code yet:** a shim-side check of the hub's attestation (STEVE or RA-TLS); encryption to the hub's key on the clearnet hop; the keymaker quorum and consortium governance; confirmation tracking.
 
-On **2026-08-11** a real Orchard to Ironwood migration traversed the full stack on mainnet: held at the shim, batched at the hub, published on the cadence, with the operator's indexer never seeing it. That run predates the mixnet deployment and used the clearnet hop, and at today's adoption the batch was size one, so it proved the mechanics and content privacy rather than batching anonymity. No migration has yet been observed crossing Nym in production.
+On 2026-08-11, a real migration from Orchard to Ironwood crossed the full stack on mainnet, and the operator's indexer never saw it. That run used the clearnet hop and a batch of one. It was a test of the mechanics and of content privacy. Batching anonymity is still untested. No one has yet observed a migration cross Nym in production.
 
 ## Maintainers
 
-[Shielded Labs](https://shieldedlabs.net), in [`ShieldedLabs/zeronym`](https://github.com/ShieldedLabs/zeronym).
+[Shielded Labs](https://shieldedlabs.net).
 
 ## Thanks
 
-Diagrams by [@zooko](https://github.com/zookoatshieldedlabs/zero-indexer-diagrams), regenerated here with the Nym hop. Thanks to Caution and to Nym.
+Diagrams by Zooko ([zero-indexer-diagrams](https://github.com/zookoatshieldedlabs/zero-indexer-diagrams)), with the Nym hop added. Thanks to Caution and to Nym.
 
 ## Contributing
 
-Issues and pull requests go to [`ShieldedLabs/zeronym`](https://github.com/ShieldedLabs/zeronym). Cross-party questions still open with Caution are tracked in [`OPEN-QUESTIONS.md`](./OPEN-QUESTIONS.md).
-
-Review of the architecture itself is the contribution most wanted right now. [Security](#security) lists what to attack first.
-
-Releases follow [`RELEASING.md`](./RELEASING.md).
+Send issues and pull requests to [`ShieldedLabs/zeronym`](https://github.com/ShieldedLabs/zeronym). The contribution we want most is a review of the architecture: start with [Security](#security). Open questions with Caution are in [`OPEN-QUESTIONS.md`](./OPEN-QUESTIONS.md). Releases follow [`RELEASING.md`](./RELEASING.md).
 
 ## License
 
@@ -120,8 +124,6 @@ Licensed under either of
 - Apache License, Version 2.0 ([LICENSE-APACHE](./LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
 - MIT license ([LICENSE-MIT](./LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
-at your option.
-
-This covers the code in this repository. The vendored crates under `vendor/` keep their own licenses.
+at your option. The vendored crates in `vendor/` are under their own licenses.
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
