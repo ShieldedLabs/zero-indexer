@@ -23,7 +23,7 @@ The long-term goal is a private indexer for all wallet traffic, over Nym and ins
 
 The adversaries are the server-side and network-metadata adversaries in Taylor Hornby's [wallet app threat model](https://zcash.readthedocs.io/en/latest/rtd_pages/wallet_threat_model.html). Wallet-local threats belong to the wallet in that model, and are out of scope here. To report a vulnerability, follow [`SECURITY.md`](./SECURITY.md).
 
-The enclaves run on AWS Nitro through [Caution](https://caution.co). The *parent host* is the AWS instance that runs an enclave. Caution runs it for a managed app. In bring-your-own-cloud (BYOC) mode, which we advise against, the operator runs it.
+The enclaves run on AWS Nitro through [Caution](https://caution.co). The *parent host* is the AWS instance that runs an enclave. Caution runs it for a managed app. In bring-your-own-cloud (BYOC) mode, which we advise against, the operator runs it. Every claim below assumes a shim with a hub configured (`ZIS_REQUIRE_DIVERSION=true`, auditor step 4).
 
 **Protected**
 
@@ -65,9 +65,9 @@ Follow the operator runbook, [`shim/deploy/caution/OPERATORS.md`](./shim/deploy/
 - **Wallet users** change nothing.
 - **Wallet developers** must choose **aligned anchors and expiry heights** within a migration epoch, as in [ZIP 318](https://zips.z.cash/zip-0318). A transaction with the latest anchor is dated by that anchor, and an observer can use the date to find it in the published batch. Also plan for these behaviors:
   - The hub holds a diverted transaction for up to about 8 minutes.
-  - The shim reports success before the hub confirms receipt, so a migration can fail silently. Anyone can cause this by filling a hub queue lane ([hub failure modes](./hub/deploy/caution/OPERATORS.md#known-failure-modes)).
+  - Over Nym, the shim reports success before the hub confirms receipt, so a migration can fail silently. Anyone can cause this by filling a hub queue lane ([hub failure modes](./hub/deploy/caution/OPERATORS.md#known-failure-modes)). Over clearnet, the shim waits for the hub and passes a refusal to the wallet.
   - The wallet must resend a migration that does not confirm, because its notes stay locked until expiry, 30 to 60 days later. Resends are safe: the hub deduplicates them, and answers `rejected` for a transaction that is already mined.
-- **Operators** run the shim, and can also run a hub. Migrations, transparent-only spends and `GetTransaction` lookups leave the operator's view. All other traffic passes through.
+- **Operators** run the shim, and can also run a hub. With a hub configured, migrations, transparent-only spends and `GetTransaction` lookups leave the operator's view, and all other traffic passes through. With no hub, the shim forwards everything and gives no privacy.
 - **Auditors** verify an endpoint with no trust in its operator. This is the full procedure, and each component guide links here. Caddy serves `/attestation` and `/nym-address` and is outside `EXPECTED_SHA256`, so steps 2 and 4 trust it. Do all five steps on the shim, then on each hub that the shim lists:
   1. **Reproduce the build.** Run `<component>/deploy/reproduce.sh` at the commit that the endpoint's `PROVENANCE` names. The binary hash must match `EXPECTED_SHA256`.
   2. **Verify the attestation.** In a fresh clone of the public app-source repo, run `caution verify --attestation-url https://<domain>/attestation`. It rebuilds the EIF, compares PCR0, PCR1 and PCR2 with the live attestation, and checks the TLS certificate binding. Require **all three PCRs**. (PCR0 and PCR1 are one code value within an enclave. PCR2 is the platform, the same for hub and shim.)
