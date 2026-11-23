@@ -163,7 +163,11 @@ Diagrams by Zooko ([zero-indexer-diagrams](https://github.com/zookoatshieldedlab
 
 ## Contributing
 
-Send issues and pull requests to [`ShieldedLabs/zeronym`](https://github.com/ShieldedLabs/zeronym). The contribution we want most is a review of the architecture: start with [Security](#security). Open questions with Caution are in [`OPEN-QUESTIONS.md`](./OPEN-QUESTIONS.md). Releases follow [`RELEASING.md`](./RELEASING.md).
+Ask questions and report bugs in [GitHub issues](https://github.com/ShieldedLabs/zero-indexer/issues). Do not report a vulnerability in an issue. Follow [`SECURITY.md`](./SECURITY.md).
+
+Pull requests are welcome. [`CONTRIBUTING.md`](./CONTRIBUTING.md) gives the checks to run and the requirements for a pull request.
+
+The contribution we want most is a review of the architecture: start with [Security](#security). Open questions with Caution are in [`OPEN-QUESTIONS.md`](./OPEN-QUESTIONS.md). Releases follow [`RELEASING.md`](./RELEASING.md).
 
 ## License
 
