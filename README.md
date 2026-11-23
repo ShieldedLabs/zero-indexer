@@ -64,7 +64,7 @@ Follow the operator runbook, [`shim/deploy/caution/OPERATORS.md`](./shim/deploy/
 
 - **Wallet users** change nothing.
 - **Wallet developers** must choose **aligned anchors and expiry heights** within a migration epoch, as in [ZIP 318](https://zips.z.cash/zip-0318). A transaction with the latest anchor is dated by that anchor, and an observer can use the date to find it in the published batch. Also plan for these behaviors:
-  - The hub holds a diverted transaction for up to about 8 minutes.
+  - The hub holds a diverted transaction for up to about 25 minutes.
   - Over Nym, the shim reports success before the hub confirms receipt, so a migration can fail silently. Anyone can cause this by filling a hub queue lane ([hub failure modes](./hub/deploy/caution/OPERATORS.md#known-failure-modes)). Over clearnet, the shim waits for the hub and passes a refusal to the wallet.
   - The wallet must resend a migration that does not confirm, because its notes stay locked until expiry, 30 to 60 days later. Resends are safe: the hub deduplicates them, and answers `rejected` for a transaction that is already mined.
 - **Operators** run the shim, and can also run a hub. With a hub configured, migrations, transparent-only spends and `GetTransaction` lookups leave the operator's view. So does a `SendTransaction` that the shim cannot read. All other traffic passes through. With no hub, the shim gives no privacy: it forwards every transaction it can read.
@@ -93,7 +93,7 @@ Green boxes are attested enclaves, the only places a migration is in cleartext. 
   ```
 
   Orchard has taken no new value since NU6.3. So any Orchard spend is from notes held since before activation, and the spend itself is the identifying event. The shim classifies before it dials the indexer. With a hub configured, it diverts or refuses a transaction it cannot parse, and never forwards it. It keeps no per-migration state.
-- **`zero-indexer-hub`** queues diverted transactions from every shim. Every 20 blocks it publishes them, shuffled and in parallel. Only block height starts a flush, because with a count trigger an attacker could flood the queue to isolate a target. The hub admits a migration only if it is still valid after the next flush. It refuses a migration past its lane's share of the flush budget, so one batch fits in one block.
+- **`zero-indexer-hub`** queues diverted transactions from every shim. Every 60 blocks (about 25 minutes) it publishes them, shuffled and in parallel. Only block height starts a flush, because with a count trigger an attacker could flood the queue to isolate a target. The hub admits a migration only if it is still valid after the next flush. It refuses a migration past its lane's share of the flush budget, so one batch fits in one block.
 
 ## Status
 

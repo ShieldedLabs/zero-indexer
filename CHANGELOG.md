@@ -9,6 +9,16 @@ under `zero-indexer`, through v29.
 
 ## Unreleased
 
+### Changed
+
+- The hub schedule follows the 25-second blocks of NU7 and keeps its
+  pre-NU7 wall-clock times. The flush interval is 60 blocks (about 25
+  minutes), the mining margin 12, the delivery lag allowance 18 and the
+  holdoff 22. The supported wallet expiry is 120 blocks, the ZIP 218
+  default from NU7 (`NU7_DEFAULT_TX_EXPIRY_DELTA`). Wallets must stamp an
+  expiry of 120 blocks or more. Operators set a stop grace period of at
+  least 15 minutes.
+
 ## v0.1.0 - 2026-11-20
 
 ### Security
