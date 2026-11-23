@@ -14,8 +14,9 @@ name: zeronym-latest-blocks
 # on the wrong chain or has stopped following it. Testnet is the early warning
 # and mainnet is the backstop.
 #
-# Mainnet has a second row: a ztreamer on a Zakura node. The shim's proxy
-# carries that server's streams, and the parser reads that node's blocks.
+# Mainnet has two more rows: a ztreamer on a Zakura node, and a Zinder through
+# its lightwalletd-compatible endpoint. The shim's proxy carries each server's
+# streams, and the parser reads the blocks of each server's node.
 #
 # The hub pins its own zebra-chain, at the same version today. This workflow
 # builds and checks the shim's pin only.
@@ -25,6 +26,7 @@ name: zeronym-latest-blocks
 #
 #   ZERONYM_MAINNET_LIGHTWALLETD
 #   ZERONYM_MAINNET_ZTREAMER
+#   ZERONYM_MAINNET_ZINDER
 #   ZERONYM_TESTNET_LIGHTWALLETD
 #
 # A job whose variable is unset FAILS. One that skipped would look exactly
@@ -78,6 +80,9 @@ jobs:
           - row: mainnet, ztreamer
             chain: main
             indexer: ${{ vars.ZERONYM_MAINNET_ZTREAMER }}
+          - row: mainnet, zinder
+            chain: main
+            indexer: ${{ vars.ZERONYM_MAINNET_ZINDER }}
           - row: testnet
             chain: test
             indexer: ${{ vars.ZERONYM_TESTNET_LIGHTWALLETD }}
