@@ -205,7 +205,7 @@ done
 # all of them. It compares addresses, port dropped, AND certificate names: the
 # shim authenticates its backend by name, so one name on two addresses is one
 # indexer. Operator identity is beyond a string check; step 4 of the auditor
-# procedure in README.md covers it. The first version compared the two IPs in
+# procedure in AUDITING.md covers it. The first version compared the two IPs in
 # deploy.env.example only, while its two names matched and the deploy guides
 # taught one host for both (external report, @ouicate).
 env_val() { grep -E "^$1=" deploy.env.example | cut -d= -f2 | awk '{print $1}'; }

@@ -43,7 +43,7 @@ Even with a hub, this isn't protected:
 
 - With one transaction per batch, the parent host and the wallet's ISP can link a wallet's IP address to its transaction, and the operator can link the wallet itself to it.
 - The shim forwards transparent-address queries, so the operator learns the wallet's transparent addresses, and from them a diverted transaction's txid and its value.
-- Wallets only check the public certificate authorities. An operator who controls the DNS could get a second certificate and read traffic from the wallet's path, though Certificate Transparency logs would show it.
+- Wallets only check the public certificate authorities. The operator controls the DNS, so it could get a second certificate and read traffic from the wallet's path. Certificate Transparency logs publish that certificate, but among the routine ones each enclave restart orders.
 - On a clearnet hub hop, anyone on that path with a certificate for the hub's name can read diverted transactions.
 - The size and timing of each submission are visible on the way in. Anyone can spot a flush on chain, or ask a hub whether a txid is in its queue.
 - AWS and Caution are trusted with the hardware and the platform.
