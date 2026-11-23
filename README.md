@@ -1,6 +1,16 @@
 # zero-indexer
 
-An attested front end for Zcash light-wallet indexers. It keeps a wallet's IP address away from the peer-to-peer network when the wallet spends Orchard funds.
+[![checks](https://img.shields.io/github/actions/workflow/status/ShieldedLabs/zero-indexer/zeronym-guards.yml?branch=main&label=checks)](https://github.com/ShieldedLabs/zero-indexer/actions/workflows/zeronym-guards.yml)
+[![hub reproducible build](https://img.shields.io/github/actions/workflow/status/ShieldedLabs/zero-indexer/zeronym-hub-reproduce.yml?branch=main&label=hub%20reproducible%20build)](https://github.com/ShieldedLabs/zero-indexer/actions/workflows/zeronym-hub-reproduce.yml)
+[![shim reproducible build](https://img.shields.io/github/actions/workflow/status/ShieldedLabs/zero-indexer/zeronym-shim-reproduce.yml?branch=main&label=shim%20reproducible%20build)](https://github.com/ShieldedLabs/zero-indexer/actions/workflows/zeronym-shim-reproduce.yml)
+[![latest blocks](https://img.shields.io/github/actions/workflow/status/ShieldedLabs/zero-indexer/zeronym-latest-blocks.yml?branch=main&label=latest%20blocks)](https://github.com/ShieldedLabs/zero-indexer/actions/workflows/zeronym-latest-blocks.yml)
+[![release](https://img.shields.io/github/v/release/ShieldedLabs/zero-indexer)](https://github.com/ShieldedLabs/zero-indexer/releases/latest)
+[![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
+[![made by Shielded Labs](https://img.shields.io/badge/made%20by-Shielded%20Labs-black)](https://shieldedlabs.net)
+
+An attested front end for Zcash light-wallet indexers.
+
+`zero-indexer` keeps a wallet's IP address away from the peer-to-peer network when the wallet spends Orchard funds. [Shielded Labs](https://shieldedlabs.net) builds and maintains it.
 
 A light wallet sends its transactions to an indexer over [ZIP 307](https://zips.z.cash/zip-0307). The indexer operator sees the wallet's IP address and the time of each request. With `zero-indexer`, an attested shim in front of the indexer sends Orchard transactions to a hub, and the hub publishes them in batches. Against the operator and the wallet's ISP, a wallet hides among the matching transactions in its batch. Today a batch holds one transaction, so that protection is weak (see [Security](#security)).
 
