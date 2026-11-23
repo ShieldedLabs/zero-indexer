@@ -155,7 +155,10 @@ On 2026-08-11, a real migration from Orchard to Ironwood crossed the full stack 
 
 ## Maintainers
 
-[Shielded Labs](https://shieldedlabs.net).
+- Mark Henderson ([@aphelionz](https://github.com/aphelionz))
+- Shoaib Ahmed ([@hu55a1n1](https://github.com/hu55a1n1))
+
+Both work at [Shielded Labs](https://shieldedlabs.net).
 
 ## Thanks
 
@@ -170,6 +173,8 @@ Pull requests are welcome. [`CONTRIBUTING.md`](./CONTRIBUTING.md) gives the chec
 The contribution we want most is a review of the architecture: start with [Security](#security). Open questions with Caution are in [`OPEN-QUESTIONS.md`](./OPEN-QUESTIONS.md). Releases follow [`RELEASING.md`](./RELEASING.md).
 
 ## License
+
+`MIT OR Apache-2.0` © 2026 [Shielded Labs](https://shieldedlabs.net)
 
 Licensed under either of
 
