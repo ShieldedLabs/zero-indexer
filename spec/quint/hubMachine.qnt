@@ -78,24 +78,35 @@ module hubMachine {
 
   /// The same budget with the reorg allowance added. A hub that follows a tip
   /// report up to the allowance behind the chain can flush that much late.
-  /// Nothing in the implementation checks this; its shipped constants meet it
-  /// with equality.
+  /// Nothing in the implementation checks this; its shipped constants meet it.
   pure def reorgSlackFits(c: HubConfig): bool =
     c.params.flushInterval + c.params.miningMargin + c.params.deliveryLag + c.params.reorgAllowance
       <= c.params.minWalletExpiry
 
   /// The same budget with the longest silence that does not yet make a hub
-  /// stale. The shipped constants do not meet it.
+  /// stale. The shipped constants meet it.
   pure def staleSlackFits(c: HubConfig): bool =
     c.params.flushInterval + c.params.miningMargin + c.params.deliveryLag + (c.staleWindow - 1)
       <= c.params.minWalletExpiry
 
   /// The relations between the shipped constants that the scaled-down schedule
-  /// keeps: the slack left by the startup budget equals the reorg allowance;
-  /// the staleness window exceeds both the margin and that slack; the budget
-  /// with the longest non-stale silence added exceeds the expiry floor by
-  /// exactly one block, and without the margin it fits.
+  /// keeps: the slack left by the startup budget exceeds the reorg allowance
+  /// plus the longest non-stale silence; the staleness window is at least the
+  /// margin and exceeds the reorg allowance.
   pure def shippedRelationsKept(c: HubConfig): bool =
+    val budget = c.params.flushInterval + c.params.miningMargin + c.params.deliveryLag
+    and {
+      c.params.minWalletExpiry - budget > c.params.reorgAllowance + (c.staleWindow - 1),
+      c.staleWindow >= c.params.miningMargin,
+      c.staleWindow > c.params.reorgAllowance,
+    }
+
+  /// The relations between the constants before NU7 (interval 20, margin 4,
+  /// lag 6, expiry floor 40): the slack left by the startup budget equals the
+  /// reorg allowance; the staleness window exceeds both the margin and that
+  /// slack; the budget with the longest non-stale silence added exceeds the
+  /// expiry floor by exactly one block, and without the margin it fits.
+  pure def relationsBeforeNu7(c: HubConfig): bool =
     val budget = c.params.flushInterval + c.params.miningMargin + c.params.deliveryLag
     and {
       c.params.minWalletExpiry - budget == c.params.reorgAllowance,
@@ -143,6 +154,14 @@ module hubMachine {
   pure def shippedAssumptions(c: HubConfig): bool = and {
     standingAssumptions(c),
     shippedRelationsKept(c),
+    reorgSlackFits(c),
+    staleSlackFits(c),
+  }
+
+  /// The relations before NU7, with the slack they gave.
+  pure def assumptionsBeforeNu7(c: HubConfig): bool = and {
+    standingAssumptions(c),
+    relationsBeforeNu7(c),
     reorgSlackFits(c),
     not(staleSlackFits(c)),
   }
@@ -763,9 +782,9 @@ module hubMachine {
   // ------------------------------------------------------------------------
   //
   // The schedule flushes every 3 blocks with a mining margin of 2 and a
-  // delivery lag of 1, and supports wallets that set an expiry 7 blocks out.
-  // It is the shipped one scaled down (shipped: interval 20, margin 4, lag 6,
-  // reorg allowance 10, staleness window 12 blocks, expiry floor 40), keeping
+  // delivery lag of 1, and supports wallets that set an expiry 10 blocks out.
+  // It is the shipped one scaled down (shipped: interval 60, margin 12, lag 18,
+  // reorg allowance 10, staleness window 12 blocks, expiry floor 120), keeping
   // the relations `shippedRelationsKept` names. The margin is 2, the smallest
   // that leaves room for a block to arrive while a flush is in flight.
   //
@@ -778,8 +797,11 @@ module hubMachine {
 
   /// Two migrations from supported wallets, built at heights 2 and 4, each
   /// an unpadded migration of shielded cost 2.
-  pure val early = orchard("early", 2, 9, 2)
-  pure val late = orchard("late", 4, 11, 2)
+  pure val early = orchard("early", 2, 12, 2)
+  pure val late = orchard("late", 4, 14, 2)
+  /// The same two migrations at the expiry floor of 7 before NU7.
+  pure val earlyBeforeNu7 = orchard("early", 2, 9, 2)
+  pure val lateBeforeNu7 = orchard("late", 4, 11, 2)
   /// A migration whose wallet set its expiry tighter than the supported floor.
   pure val tight = orchard("tight", 2, 5, 2)
 
@@ -790,7 +812,7 @@ module hubMachine {
       flushInterval: 3,
       miningMargin: 2,
       deliveryLag: 1,
-      minWalletExpiry: 7,
+      minWalletExpiry: 10,
       reorgAllowance: 1,
       maxAttempts: 2,
       blockBudget: None,
@@ -812,13 +834,19 @@ module hubMachine {
     ...flakyTip,
     blockActions: None,
     params: { ...flakyTip.params, minWalletExpiry: 6 },
-    payloads: Set(orchard("early", 2, 8, 2), late),
+    payloads: Set(orchard("early", 2, 8, 2), lateBeforeNu7),
   }
 
-  // A hub that may go without a tip for a while: on the shipped relation
-  // between the staleness window and the expiry floor, and on the relation
-  // that would cover the silence.
-  pure val staleLag: HubConfig = { ...timely, tip: TipMayLag, blockActions: None }
+  // A hub that may go without a tip for a while: on the relation between the
+  // staleness window and the expiry floor before NU7, and on the relation
+  // that covers the silence.
+  pure val staleLag: HubConfig = {
+    ...timely,
+    tip: TipMayLag,
+    blockActions: None,
+    params: { ...timely.params, minWalletExpiry: 7 },
+    payloads: Set(earlyBeforeNu7, lateBeforeNu7),
+  }
   pure val staleLagWithSlack: HubConfig = {
     ...staleLag,
     params: { ...staleLag.params, minWalletExpiry: 8 },
@@ -860,7 +888,7 @@ module hubMachine {
     not(reorgSlackFits(flakyTipNoSlack)),
     initWith(flakyTipNoSlack),
   }
-  action initStaleLag = all { shippedAssumptions(staleLag), initWith(staleLag) }
+  action initStaleLag = all { assumptionsBeforeNu7(staleLag), initWith(staleLag) }
   action initByzIndexer = all { shippedAssumptions(byzIndexer), initWith(byzIndexer) }
   action initUnknownUpgrade = all { shippedAssumptions(unknownUpgrade), initWith(unknownUpgrade) }
   action initFlakyTipBudget = all { shippedAssumptions(flakyTipBudget), initWith(flakyTipBudget) }
