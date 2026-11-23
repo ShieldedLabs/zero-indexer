@@ -81,7 +81,7 @@ module hubTest {
   pure val STATES = Set(down, starting, running(2), running(5), holding, flushing, stale, draining, stopped,
     stale.after(DrainHInput), flushing.after(verdict(pA, Retryable)), burnedC)
 
-  /// The schedule with the candidate fix of ShieldedLabs/zero#121: a per-flush budget of 2, and
+  /// The schedule with the flush-budget fix: a per-flush budget of 2, and
   /// a mining margin of 2, so the holdoff ends 1 + 2 blocks after it starts.
   pure val BUDGET_PARAMS: HubParams = { ...PARAMS, miningMargin: 2, blockBudget: Some(2) }
   pure def budgeted(tip: Height): HubState = startingHub(BUDGET_PARAMS).after(TipHInput(tip))

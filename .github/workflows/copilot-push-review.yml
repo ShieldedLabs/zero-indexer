@@ -70,7 +70,7 @@ name: Copilot Review
 # IDENTITY MATTERS. A pull request opened with the built-in GITHUB_TOKEN is
 # authored by github-actions[bot], and Copilot does not review it: measured
 # directly, the identical diff into the identical base got no review as the bot
-# (ShieldedLabs/zero#39) and a review in under two minutes as a real user (ShieldedLabs/zero#41). So the
+# and a review in under two minutes as a real user. So the
 # pull request is created with COPILOT_REVIEW_PAT, a token belonging to someone
 # holding a Copilot seat. It should be a fine-grained token with the org as
 # resource owner, repository access limited to this repository and REVIEW_REPO,

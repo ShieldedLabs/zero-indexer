@@ -396,8 +396,8 @@ G6C=conformingMinedBeforeExpiry
 # The schedule guarantee with every component honest: under a timely tip, and
 # under a tip that may be reported behind the chain.
 # G8 on flakyTip is finding 6, and on staleLagWithSlack finding 2's admission
-# half, both fixed by ShieldedLabs/zero#85. G6c is block capacity, and flakyTipBudget the
-# candidate fix of ShieldedLabs/zero#121 under a tip that may be reported behind the chain. The
+# half, both fixed by the admission fix. G6c is block capacity, and flakyTipBudget the
+# flush-budget fix under a tip that may be reported behind the chain. The
 # properties of one configuration share one exploration.
 job tlc_holds    initTimely             step $G6B,$K6,$G8,$G6C
 job tlc_holds    initFlakyTip           step $G6B,$G8
@@ -409,7 +409,7 @@ job tlc_holds    initFlakyTipBudget     step $G6C,withinBudget,$G6B,$G8
 job tlc_violated initFlakyTipNoSlack    step $G6B 12                    # K3'
 job tlc_violated initStaleLag           step $G6B 13                    # K4
 job tlc_violated initStaleLag           step $K6 13                     # K6
-job tlc_violated initStaleLagWithSlack  step $G6B 19                    # finding 2's spent epoch, not fixed by ShieldedLabs/zero#85
+job tlc_violated initStaleLagWithSlack  step $G6B 19                    # finding 2's spent epoch, not fixed by the admission fix
 job tlc_violated initFlakyStaleLagWithSlack step $G6B 15                # K11
 job tlc_violated initFlakyTip           step $G6C 17                    # K12
 # K5, three causes: a crash; without one, a final flush nothing judged; with

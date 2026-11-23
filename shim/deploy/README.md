@@ -364,7 +364,7 @@ base digest, no flag and no script changed between `62577649…` and `4143ce5f�
 > `.github/workflows/zeronym-shim-reproduce.yml` then ran the same script on a
 > **native x86_64** runner, on different hardware, a different kernel and a
 > different BuildKit, and reached `4143ce5f…` again:
-> [run 30720417584](https://github.com/ShieldedLabs/zero/actions/runs/30720417584).
+> run 30720417584 in the zero monorepo.
 > Since the two hosts differ in architecture and in emulation, the agreement also
 > rules out CPU-feature-detection-dependent codegen, which is the failure mode
 > digest pinning alone would not catch.
@@ -674,7 +674,7 @@ not, and `4143ce5f…` describes a real commit.
 *Also paid.* Cross-machine agreement, which was the last thing owed.
 `.github/workflows/zeronym-shim-reproduce.yml` ran `reproduce.sh` on a **native
 x86_64** runner and reached `4143ce5f…`, matching `EXPECTED_SHA256`:
-[run 30720417584](https://github.com/ShieldedLabs/zero/actions/runs/30720417584).
+run 30720417584 in the zero monorepo.
 The two hosts differ in architecture, in emulation (Rosetta versus native),
 in kernel and in BuildKit build, so the agreement covers more than a rerun on
 similar hardware would: it rules out CPU-feature-detection-dependent codegen,
@@ -1041,7 +1041,7 @@ above.
 - **Proven, for the current hash: determinism across *independent hardware*, and
   across execution modes.** Two data points on commit `2243adbdce`, measured not
   argued. GitHub Actions run
-  [30688786506](https://github.com/ShieldedLabs/zero/actions/runs/30688786506)
+  30688786506 in the zero monorepo
   built from that commit on a `blacksmith-16vcpu-ubuntu-2404` runner (native
   x86_64 Linux) and produced
   `6257764933df4e2a907f2a0d7d371d42172d5b8350ee5916610c18731bda649f`; its
@@ -1057,7 +1057,7 @@ above.
   a published hash that had drifted from the committed source on the tripwire's
   first live test. See the post-mortem under "Recorded hashes".
   The earlier run
-  [30681137118](https://github.com/ShieldedLabs/zero/actions/runs/30681137118)
+  30681137118 in the zero monorepo
   attests the same properties for `a9c19f2c…`, the old classifier, and is kept
   as history.
   Not measured: OCI **image digest** agreement across machines. Only the binary
@@ -1067,7 +1067,7 @@ above.
   builds behind it from commit `c161012ff2` itself, with no working-tree overlay,
   agreeing with each other and with `EXPECTED_SHA256`; and a third on a **native
   x86_64** GitHub runner reaching the same value
-  ([run 30720417584](https://github.com/ShieldedLabs/zero/actions/runs/30720417584)).
+  (run 30720417584 in the zero monorepo).
   The two hosts differ in architecture, emulation, kernel and BuildKit, so this
   also rules out CPU-feature-detection-dependent codegen. Same footing as
   `62577649…` and `a9c19f2c…`.
