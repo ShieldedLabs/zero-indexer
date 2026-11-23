@@ -6,7 +6,7 @@ Thank you for your help. This file tells you how to ask a question, which checks
 
 Ask questions and report bugs in [GitHub issues](https://github.com/ShieldedLabs/zero-indexer/issues).
 
-Do not report a vulnerability in an issue, a pull request or a discussion. Follow [`SECURITY.md`](./SECURITY.md).
+Do not report a vulnerability in an issue, a pull request or a discussion. Follow the [security policy](./SECURITY.md).
 
 ## Checks
 
@@ -40,13 +40,13 @@ sh spec/quint/check.sh
 - Keep one change in each pull request.
 - A pull request into `main` needs one approval, all review threads resolved, and all `zeronym-guards` checks green.
 - Pull requests are squash-merged. The title becomes the commit subject, so write the title as a [conventional commit](https://www.conventionalcommits.org/): `type(scope): summary`. For example, `feat(hub): scale the schedule to NU7 blocks and the 120-block expiry`. The scope is optional. Recent titles use `hub` and `readme`.
-- Release notes collect under `## Unreleased` in [`CHANGELOG.md`](./CHANGELOG.md), as [`RELEASING.md`](./RELEASING.md) describes.
+- Release notes collect under `## Unreleased` in the [changelog](./CHANGELOG.md), as the [release playbook](./RELEASING.md) describes.
 
 ## Reproducible builds
 
 `hub/deploy/EXPECTED_SHA256` and `shim/deploy/EXPECTED_SHA256` hold the hash of each binary as built from `main`. The reproduce workflows build each binary two times from cold and compare the result with that hash.
 
-Any change to `src/`, `Cargo.toml`, `Cargo.lock` or `proto/src/` changes the binary's hash, even a change that only moves lines in `src/`. [`hub/deploy/README.md`](./hub/deploy/README.md) and [`shim/deploy/README.md`](./shim/deploy/README.md) list the other inputs. Put a new hash in its own commit, and say so in the pull request. For the shim, follow the re-baseline steps in `shim/deploy/README.md`: the same commit updates the current row of its "Recorded hashes" table, and `guards.sh` fails if the two differ.
+Any change to `src/`, `Cargo.toml`, `Cargo.lock` or `proto/src/` changes the binary's hash, even a change that only moves lines in `src/`. The deploy READMEs for the [hub](./hub/deploy/README.md) and the [shim](./shim/deploy/README.md) list the other inputs. Put a new hash in its own commit, and say so in the pull request. For the shim, follow the re-baseline steps in its [deploy README](./shim/deploy/README.md): the same commit updates the current row of its "Recorded hashes" table, and `guards.sh` fails if the two differ.
 
 ## License
 
