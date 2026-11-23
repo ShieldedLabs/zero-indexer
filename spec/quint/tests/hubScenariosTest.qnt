@@ -521,10 +521,10 @@ module hubScenariosTest {
   run tipAheadOfChainFlushesEarlyTest =
     started(byzIndexer)
       .then(block)
-      .then(deliver(early))
+      .then(deliver(earlyBeforeNu7))
       .then(observeWith(3))
       .then(flushBegin)
-      .expect(height == 2 and h.tip == Some(3) and h.inFlight() == Set(early))
+      .expect(height == 2 and h.tip == Some(3) and h.inFlight() == Set(earlyBeforeNu7))
       .expect(flushesAheadOfChain)
       .expect(conformingFirstOfferBeforeExpiry)
 
@@ -543,14 +543,14 @@ module hubScenariosTest {
       .then(flushBegin)
       .expect(flightStart == 2 + silence and h.inFlight() == Set(payload))
 
-  /// G6b needs the indexer. With the tip withheld up to height 11, a
-  /// supported wallet's transaction is offered at 11 with expiry 12, and
-  /// after one block in flight the node cannot take it.
+  /// G6b needs the indexer. With the tip withheld up to height 8, a
+  /// supported wallet's transaction is offered at 8 with expiry 9, and after
+  /// one block in flight the node cannot take it.
   run indexerWithholdsTipFromConformingTest =
-    tipWithheld(early, 9)
-      .expect(conforming(early, cfg.params.minWalletExpiry) and onTime == Set(early))
+    tipWithheld(earlyBeforeNu7, 6)
+      .expect(conforming(earlyBeforeNu7, cfg.params.minWalletExpiry) and onTime == Set(earlyBeforeNu7))
       .expect(not(conformingFirstOfferBeforeExpiry))
       .then(advance)
-      .expect(not(nodeWouldTake(early)))
-      .then(judge(early, Rejected))
+      .expect(not(nodeWouldTake(earlyBeforeNu7)))
+      .then(judge(earlyBeforeNu7, Rejected))
 }

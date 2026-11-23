@@ -420,7 +420,7 @@ job tlc_violated initTimely             quietStep $K5 15
 
 # The trust matrix: the schedule guarantee is violated once the indexer is
 # Byzantine.
-job tlc_violated initByzIndexer         step $G6B 22
+job tlc_violated initByzIndexer         step $G6B 16
 
 # Reachability. The antecedent of G6b, so that a "holds" is not
 # vacuous; and one state per family of steps, because TLC runs with deadlock

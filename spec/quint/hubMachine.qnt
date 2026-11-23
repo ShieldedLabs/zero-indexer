@@ -857,9 +857,16 @@ module hubMachine {
   // flush their sum late (K11).
   pure val flakyStaleLagWithSlack: HubConfig = { ...staleLagWithSlack, tip: TipMayRegressAndLag }
 
-  // A Byzantine indexer, on the schedule of `timely`, with one supported
-  // migration and `tight`.
-  pure val byzIndexer: HubConfig = { ...timely, indexerRole: Byzantine, payloads: Set(early, tight), blockActions: None }
+  // A Byzantine indexer, on the schedule of `timely` at the expiry floor of 7
+  // before NU7, with one supported migration and `tight`. The violation of G6b
+  // is the same at every floor, and the floor of 7 keeps the TLC search short.
+  pure val byzIndexer: HubConfig = {
+    ...timely,
+    params: { ...timely.params, minWalletExpiry: 7 },
+    indexerRole: Byzantine,
+    payloads: Set(earlyBeforeNu7, tight),
+    blockActions: None,
+  }
 
   /// Bytes neither the shim nor the hub can parse: no txid, no expiry. After
   /// a network upgrade a build does not know, every transaction looks like
@@ -889,7 +896,7 @@ module hubMachine {
     initWith(flakyTipNoSlack),
   }
   action initStaleLag = all { assumptionsBeforeNu7(staleLag), initWith(staleLag) }
-  action initByzIndexer = all { shippedAssumptions(byzIndexer), initWith(byzIndexer) }
+  action initByzIndexer = all { assumptionsBeforeNu7(byzIndexer), initWith(byzIndexer) }
   action initUnknownUpgrade = all { shippedAssumptions(unknownUpgrade), initWith(unknownUpgrade) }
   action initFlakyTipBudget = all { shippedAssumptions(flakyTipBudget), initWith(flakyTipBudget) }
   action initStaleLagWithSlack = all {

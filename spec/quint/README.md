@@ -289,7 +289,7 @@ The schedule flushes every 3 blocks with a mining margin of 2, a delivery lag of
 | `staleLag` | the hub may hear no tip, and goes stale; the expiry floor is 7, as before NU7 | K4, K6 |
 | `staleLagWithSlack` | and the expiry floor is 8, enough to cover the silence | finding 2 |
 | `flakyStaleLagWithSlack` | as `staleLagWithSlack`, and the tip may also be reported up to the reorg allowance behind | K11 |
-| `byzIndexer` | a Byzantine indexer, and a tight-expiry payload | the trust matrix |
+| `byzIndexer` | a Byzantine indexer, and a tight-expiry payload, at the expiry floor of 7 before NU7 | the trust matrix |
 | `unknownUpgrade` | an unparseable payload; scripted runs only | the attempt bound |
 
 In every configuration a due flush begins before the next block, and at most one block arrives while a flush is in flight. Under `staleLag` a hub is stale once it has seen no new high for the staleness window; its free-running clock is then assumed never behind the chain and at most one flush interval ahead of it. The implementation relies on "never behind" and does not enforce it (`hub/src/batcher.rs:86-89`).
@@ -313,7 +313,7 @@ With 8 workers, on the machine this was written on:
 | `staleLagWithSlack` | G6b (finding 2) | violated, 19 states |
 | `flakyStaleLagWithSlack` | G6b (K11); G8 | violated, 15 states; holds, 2 461 236 states, not in the gate |
 | `timely` | K5 | violated: 5 states; 8 without a crash; 15 without a shutdown either |
-| `byzIndexer` | G6b | violated, 22 states |
+| `byzIndexer` | G6b | violated, 16 states |
 
 Block capacity added the mined set and the miner's choice of block. `timely` and `flakyTip` model it and grew about 1.3 times. The other configurations set no block capacity and keep their state counts. Every old verdict and counterexample length stayed the same. The gate took about 10 minutes on a 16-core machine with 6 rows at once.
 
