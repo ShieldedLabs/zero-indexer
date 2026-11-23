@@ -196,7 +196,7 @@ caution verify --attestation-url https://<tls-domain>/attestation
 The same command is what anyone else uses, with no Caution account and no
 checkout of yours.
 
-`caution verify` is step 2 of the [auditor procedure](../../../README.md#usage).
+`caution verify` is step 2 of the [auditor procedure](../../../AUDITING.md).
 A PASS proves the enclave runs the tree in your app-source repo. Steps 3 to 5
 tie that tree to `ShieldedLabs/zeronym`, check its parameters (the hub it diverts
 to included), and check the network path.
