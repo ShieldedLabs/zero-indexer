@@ -10,7 +10,11 @@ An attested front end for Zcash light-wallet indexers.
 
 When a light wallet sends a transaction, the indexer it talks to sees the wallet's IP address and the time. If that transaction moves funds between pools, the move is public on chain, so the operator can tie an IP address to an amount. `zero-indexer` puts a small router, the shim, in front of an existing indexer, inside an attested enclave. The shim takes Orchard transactions off the normal path and hands them to a hub, which publishes them in batches. As long as someone else runs the hub's indexers, the operator's indexer never sees them.
 
+![Zero-indexer transaction publication: wallet TLS connections end at zero-indexer shims inside locked enclaves. Shims connect to a shared zero-indexer hub inside another enclave, and the indexers and the hub publish to the mempool](./images/zcash_zero_indexer_publication.svg)
+
 Today each batch holds a single transaction, so a wallet can't hide in a crowd yet. Read [Security](#security) before you rely on it.
+
+If you run an indexer, start with the [operator runbook](./shim/deploy/caution/OPERATORS.md). Wallet developers should start with [Usage](#usage), and auditors with the [audit steps](./AUDITING.md).
 
 `zero-indexer` is built by [Shielded Labs](https://shieldedlabs.net). The long-term goal is a private indexer for all wallet traffic, over Nym and inside an attested enclave, with private information retrieval (PIR) added later.
 
@@ -49,6 +53,15 @@ Even with a hub, this isn't protected:
 - AWS and Caution are trusted with the hardware and the platform.
 
 The [threat model](./THREAT-MODEL.md) has the full list, with the exact conditions for each claim.
+
+### How we verify it
+
+- When hub or shim code changes, CI builds that binary twice from cold on a native x86_64 runner and checks both builds against the hash in this repository ([hub](./.github/workflows/zeronym-hub-reproduce.yml), [shim](./.github/workflows/zeronym-shim-reproduce.yml)). The recipe was first reproduced on a different machine. These two checks aren't required for a merge.
+- To check a live endpoint without trusting whoever runs it, follow the [audit steps](./AUDITING.md). They reproduce the binary, verify the enclave's attestation, and compare the deployed tree with this repository. Two of the steps still trust Caution's Caddy server.
+- The protocol has a [Quint model](./spec/quint/README.md). Each pull request runs a bounded random simulation of it. TLC also checks every reachable state of a scaled-down hub model, in the four configurations we claim schedule guarantees for.
+- [cargo vet](https://mozilla.github.io/cargo-vet/) runs on each pull request, so a new dependency can't merge without an audit or a recorded exemption. Most are exempted today: 712 of the hub's 846 crates and 759 of the shim's 901.
+- Taylor Hornby's review raised 42 high and medium findings. By the last count in [`REVIEW_STATUS.md`](./REVIEW_STATUS.md), 27 are fixed or mitigated, and 23 of those have checks that run in CI.
+- Daily jobs read the latest mainnet and testnet blocks through the shim's parser, and run the hub's live-chain tests against two mainnet indexers.
 
 ## Background
 
@@ -131,9 +144,7 @@ shim/target/release/zero-indexer-shim \
 
 ## How it works
 
-![Zero-indexer transaction publication: wallets reach a shim inside a TEE at each organization, which routes Orchard-touching transactions over the Nym mixnet to a hub in its own TEE, which publishes to the mempool](./images/zcash_zero_indexer_publication.svg)
-
-The green boxes are attested enclaves. They're the only places where a migration exists in the clear. Normal traffic takes the grey path to the indexer, as it does today, and diverted transactions take the green path. Each shim runs its Nym client in-process, so wallets never touch the mixnet. Transactions from different shims leave the mixnet as one stream, and the hub can't tell which shim sent which.
+In the diagram at the top, the green boxes are attested enclaves. They're the only places where a migration exists in the clear. Normal traffic takes the grey dashed path from a shim to its indexer, as it does today. Diverted transactions go to the hub instead, over the Nym mixnet or clearnet. Each shim runs its Nym client in-process, so wallets never touch the mixnet. Transactions from different shims leave the mixnet as one stream, and the hub can't tell which shim sent which.
 
 The shim, `zero-indexer-shim`, decides where a `SendTransaction` goes by the pools it touches. It ignores amounts and destinations:
 
