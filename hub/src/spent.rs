@@ -15,8 +15,8 @@
 //! indexer nothing about what arrives (the same rule REVIEW.md sets against
 //! `testmempoolaccept`). Each indexer is read on its own, through
 //! `GetBlockRangeNullifiers` filtered to Orchard, from NU6.3 activation (no
-//! older proof verifies under the hub's key) to that indexer's tip, about a
-//! minute of reads on mainnet, inside the 5-minute tip warm-up. Then every
+//! older proof verifies under the hub's key) to that indexer's tip, about 15 s
+//! of reads on mainnet, inside the 5-minute tip warm-up. Then every
 //! [`SYNC_INTERVAL`] it re-reads from [`RESYNC_DEPTH`] blocks back, so a reorg
 //! inside the tip tracker's allowance replaces what it saw. Each indexer runs
 //! on its own task, and reads no higher than the tracked tip plus
@@ -62,15 +62,21 @@ pub const RESYNC_DEPTH: u32 = 10;
 /// How often an indexer's task looks for the tracked tip before its first read.
 const FIRST_TIP_POLL: Duration = Duration::from_secs(1);
 
-/// The most blocks per `GetBlockRangeNullifiers` call. Measured 2026-10-28
-/// against a public lightwalletd: 0.6 s and about 100 KB for 1 000 mainnet
-/// blocks filtered to Orchard, well inside the chain client's 10 s budget and
-/// 4 MiB body limit.
+/// The most blocks per `GetBlockRangeNullifiers` call. The chain client dials a
+/// new connection for each call, so a call costs about six round trips (TCP,
+/// TLS, the request, TCP slow start) before its body arrives, and the read is
+/// faster with fewer, larger calls. Measured 2026-11-23 from NU6.3 to the tip
+/// (177 000 blocks) against an indexer 50 ms away: 53 s at 1 000 blocks a
+/// call, 15 s at 5 000.
+///
+/// The densest 5 000 blocks, right after NU6.3 activation, came to 3.1 MB,
+/// inside the chain client's 4 MiB body limit. 10 000 blocks there came to
+/// 4.9 MB, over it.
 ///
 /// A failed call halves its indexer's chunk, down to one block (at most 2,440
 /// actions, under 100 KB), and each read that succeeds doubles it again up to
 /// this size.
-pub const SYNC_CHUNK_BLOCKS: u32 = 1000;
+pub const SYNC_CHUNK_BLOCKS: u32 = 5000;
 
 /// Nullifiers one indexer's view may hold. Mainnet had revealed 251,421
 /// Orchard nullifiers since NU6.3 on 2026-10-29 (about 2.35 a block, so about
