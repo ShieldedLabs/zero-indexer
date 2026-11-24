@@ -24,6 +24,7 @@ set -eu
 cd "$(dirname "$0")"
 
 fails=0
+skips=0
 pass() { printf '  PASS  %s\n' "$1"; }
 fail() { printf '  FAIL  %s\n' "$1"; shift; [ $# -gt 0 ] && printf '        %s\n' "$@"; fails=$((fails + 1)); }
 
@@ -165,6 +166,50 @@ else
 		"The audit bounds every log-discipline finding on attested meaning no console."
 fi
 
+# ---------------------------------------------------------------- M27
+# Auditors check for ZIS_REQUIRE_DIVERSION=true in the published manifest at
+# step 4. Operators build that manifest with the shim's assembler. So the
+# assembler must write the flag into the env block with each hub transport.
+# Forward-only, the flag must stay out: the shim would exit at startup. This
+# runs the assembler and reads the env block of the manifest it writes. The
+# assembler runs on committed source only. With uncommitted changes under shim/,
+# this check is skipped. CI always runs it.
+m27_bad=""
+# <case> <expected count of flag lines> [hub flags...]
+# Signing is off for the commit the assembler makes in its output directory.
+m27_check() {
+	m27_case=$1 m27_want=$2
+	shift 2
+	if GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=false \
+		sh shim/deploy/caution/assemble-caution.sh --name m27 \
+		--backend 192.0.2.10:9067 --backend-tls indexer.example \
+		--tls-domain wallet.example "$@" "$m27_dir/$m27_case" \
+		>/dev/null 2>"$m27_dir/$m27_case.err"; then
+		m27_got=$(sed -n '/^    env = {$/,/^    }$/p' "$m27_dir/$m27_case/caution.hcl" \
+			| grep -c '^ *ZIS_REQUIRE_DIVERSION = "true"$' || true)
+		[ "$m27_got" = "$m27_want" ] || m27_bad="$m27_bad $m27_case"
+	else
+		m27_bad="$m27_bad $m27_case(assembly failed: $(tail -n 1 "$m27_dir/$m27_case.err"))"
+	fi
+}
+if [ -n "$(git status --porcelain -- shim)" ]; then
+	printf '  SKIP  %s\n' "M27 shim/ has uncommitted changes, and the assembler needs committed source"
+	skips=$((skips + 1))
+else
+	m27_dir=$(mktemp -d)
+	trap 'rm -rf "$m27_dir"' EXIT
+	m27_check clearnet 1 --hub 192.0.2.20:443 --hub-tls hub.example
+	m27_check clearnet-plaintext 1 --hub 192.0.2.20:443
+	m27_check nym 1 --hub-nym m27.hub@gateway --nym-egress 192.0.2.30/32:443
+	m27_check forward-only 0
+	if [ -z "$m27_bad" ]; then
+		pass "M27 the shim assembler sets ZIS_REQUIRE_DIVERSION=true with a hub, and only then"
+	else
+		fail "M27 the shim assembler sets ZIS_REQUIRE_DIVERSION wrongly for:$m27_bad" \
+			"Auditors check for the flag at step 4 when a hub is set. Forward-only, the shim would exit at startup."
+	fi
+fi
+
 # ---------------------------------------------------------------- M31
 # "Not protected" must state the consequence, not just name the endpoints.
 if grep -q "txid \*\*and its value\*\*" THREAT-MODEL.md && grep -q "txid and its value" README.md; then
@@ -236,8 +281,10 @@ else
 fi
 
 printf '\n'
-if [ "$fails" -eq 0 ]; then
+if [ "$fails" -eq 0 ] && [ "$skips" -eq 0 ]; then
 	printf 'all guards passed\n\n'
+elif [ "$fails" -eq 0 ]; then
+	printf '%s guard(s) skipped, the rest passed\n\n' "$skips"
 else
 	printf '%s guard(s) FAILED\n\n' "$fails"
 	exit 1
