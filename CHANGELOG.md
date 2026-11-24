@@ -24,6 +24,15 @@ changelog under `zero-indexer`.
   expiry of 120 blocks or more. Operators set a stop grace period of at
   least 15 minutes.
 
+### Fixed
+
+- The shim's `assemble-caution.sh` sets `ZIS_REQUIRE_DIVERSION = "true"`
+  whenever `--hub` or `--hub-nym` is set. Auditors check for this setting in
+  step 4 of the auditor procedure. Shims assembled from earlier commits fail
+  that step. A hub shim's PCR0 and PCR1 change on re-assembly. To pass step 4,
+  re-assemble and redeploy. Then push and tag the new commit at the
+  `--app-source` URL.
+
 ## v0.1.0 - 2026-11-20
 
 ### Security

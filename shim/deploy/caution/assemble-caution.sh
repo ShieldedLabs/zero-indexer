@@ -27,6 +27,9 @@
 # exclusive. Without either, the shim is forward-only: it classifies and logs,
 # and still hands every migration to the operator's indexer.
 #
+# With --hub or --hub-nym, this script also writes ZIS_REQUIRE_DIVERSION=true.
+# Auditors check for it in step 4 of the auditor procedure.
+#
 # --hub-nym diverts over the Nym mixnet. It needs one or more --nym-egress
 # allowlist rules (the gateway(s) and nym-api set, from the host operator), and
 # the enclave reaches those, NOT the hub directly. See the long note in the Nym
@@ -429,6 +432,17 @@ EOF
 	echo "==> DIVERSION ON: Orchard-touching transactions go to $HUB, not to the operator's indexer."
 else
 	echo "==> forward-only: no --hub, so migrations are forwarded to the operator's indexer (no privacy)."
+fi
+
+# With this flag, the shim exits at startup if the manifest's hub lines are lost
+# or blank. It is written only with a hub, so a forward-only shim can start.
+if [ -n "$HUB$HUB_NYM" ]; then
+	cat >> "$HUB_ENV" <<'EOF'
+
+      # With this set, the shim starts only when a hub transport is configured.
+      # Auditors check for it in step 4 of the auditor procedure.
+      ZIS_REQUIRE_DIVERSION = "true"
+EOF
 fi
 
 if [ -n "$HUB_TLS" ] && [ -z "$HUB" ]; then

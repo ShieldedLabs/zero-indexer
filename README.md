@@ -95,7 +95,7 @@ sh shim/deploy/caution/assemble-caution.sh \
 
 The shim diverts transactions only when `--hub` or `--hub-nym` (the Nym transport) is set. Otherwise the shim forwards each `SendTransaction` it reads in full to the operator's indexer, unparseable ones included. Shielded Labs gives you the hub's address and domain.
 
-Until issue [#24](https://github.com/ShieldedLabs/zero-indexer/issues/24) is fixed, a shim fails audit step 4, because the assembler leaves `ZIS_REQUIRE_DIVERSION` unset. With the flag added by hand, the shim fails step 3 instead.
+With either flag, the assembler also sets `ZIS_REQUIRE_DIVERSION=true`, which is required by audit step 4.
 
 ### Dependencies
 

@@ -377,6 +377,7 @@ understanding what they mean.
 | `ZIS_LOOKUP_TIMEOUT_SECS` | how long a `GetTransaction` waits for the hub before failing closed | default **90 s** (raised from 25 s against measurement). Tuning it changes the enclave config, not the binary, so your `EXPECTED_SHA256` and reproducibility trail stay put. It **multiplies** by the number of `--hub-nym` addresses |
 | `ZIS_BROADCAST_ONLY` | relay only `SendTransaction` and `GetTransaction`; every other gRPC method answers `UNIMPLEMENTED` | default `false`. `assemble-caution.sh` has no switch for it: add `ZIS_BROADCAST_ONLY = "true"` by hand to `unit.env` in the generated manifest. Setting it changes PCR0/PCR1 |
 | `ZIS_HUB` / `ZIS_HUB_TLS` | clearnet hub: a literal `IPv4:port`, and the name its certificate must carry | the hub's Caution-managed address and its domain. The shim dials this address and checks the name, so an auditor checks the address against the hub's domain (auditor procedure, step 4) |
+| `ZIS_REQUIRE_DIVERSION` | start only when a hub transport is configured, and exit at startup otherwise | `true`. `assemble-caution.sh` writes it whenever `--hub` or `--hub-nym` is set. Auditors check for it in step 4 of the auditor procedure. Setting it changes PCR0/PCR1 |
 
 `ZIS_BACKEND_TLS` does double duty: the name the backend's certificate must
 present, and the request `:authority` your ingress routes on. Hence the one
