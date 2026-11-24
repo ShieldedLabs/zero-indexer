@@ -56,8 +56,8 @@ wrong shape, not merely an unbuilt one.
   and by 1024 entries split into three lanes: 896 for transactions whose proofs
   verified, 112 for transparent-only spends, 16 for what it cannot verify.
 - **Reads the Orchard nullifiers** each indexer reports mined
-  (`GetBlockRangeNullifiers`): about a minute from cold on mainnet (measured
-  2026-10-29), then every 30 seconds. Admission does not wait for it. The check
+  (`GetBlockRangeNullifiers`): about 15 s from cold on mainnet (measured
+  2026-11-23), then every 30 seconds. Admission does not wait for it. The check
   is on when at least two views are current and not full, or the single view
   is, when only one indexer is configured. A full view and a view that is not
   current abstain. The log says `nullifier set synced` when it is on, and
