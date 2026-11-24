@@ -135,7 +135,7 @@ module trustTest {
       .expect(not(queuedBytesConfidential))
 
   /// Finding 8, fixed by the admission fix. For a transaction that exists nowhere the
-  /// indexer answers "found, height 0, no body". Before the admission fix the hub forwarded
+  /// indexer answers "found, height 0, no body". Before the admission fix, the hub forwarded
   /// it and the wallet saw pending. The hub's client now reads it as the
   /// endpoint failing, and the wallet sees the lookup as unavailable.
   run indexerEmptyAnswerIsUnavailableTest =
