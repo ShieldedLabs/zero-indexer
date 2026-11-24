@@ -137,7 +137,7 @@ async fn main() -> Result<(), BoxError> {
     }
 
     // The Orchard nullifiers the chain has revealed, read on the hub's own
-    // clock. Its first full read took about a minute on mainnet (2026-10-29),
+    // clock. Its first full read took about 15 s on mainnet (2026-11-23),
     // inside the tip warm-up; admission does not wait for it.
     tokio::spawn(spent::run(
         revealed,

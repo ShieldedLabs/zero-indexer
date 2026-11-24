@@ -9,6 +9,15 @@ under `zero-indexer`, through v29.
 
 ## Unreleased
 
+### Changed
+
+- The hub's first read of the Orchard nullifiers since NU6.3 is about 3.5
+  times faster. It now reads 5 000 blocks per `GetBlockRangeNullifiers` call,
+  up from 1 000. The hub dials a new connection for each call, so the number
+  of calls set the time. Against an indexer 50 ms away, the read took 53 s
+  before and 15 s after. The largest response, the 5 000 blocks right after
+  NU6.3 activation, is 3.1 MB, inside the 4 MiB body limit.
+
 ## v0.1.0 - 2026-11-20
 
 ### Security
