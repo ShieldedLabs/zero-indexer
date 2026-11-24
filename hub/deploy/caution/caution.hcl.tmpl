@@ -11,9 +11,9 @@
 # build is deterministic: this commit yields this binary on any machine. The
 # attestation binds the enclave to a rebuild of the app-source repo named below,
 # which `caution verify` checks on PCR0, PCR1, PCR2 and the TLS binding. The
-# attestation carries no binary hash. Re-assembling from ShieldedLabs/zeronym and
-# diffing against the app-source repo ties the two halves together; the auditor
-# procedure in README.md (Usage, Auditors) lists every step.
+# attestation carries no binary hash. An auditor ties the two halves together
+# by re-assembling from ShieldedLabs/zero-indexer and diffing against the
+# app-source repo. Every step is in AUDITING.md in ShieldedLabs/zero-indexer.
 
 enclave "__ENCLAVE_NAME__" {
   build {

@@ -211,7 +211,7 @@ is timing, wallet behaviour, the new trust shift, and batch size.
   forwards, and its prevout names the migration. Example: a wallet deshields
   Orchard to its own t-address, then auto-shields that output into Ironwood.
   Catching it needs the parent, which the stateless shim does not hold. It sits
-  with the conceded transparent-pool leak in `README.md`.
+  with the conceded transparent-pool leak in `THREAT-MODEL.md`.
 - **Fresh-address pre-announcement.** A wallet that queries a brand-new deshield
   destination *before* the migration confirms leaks the address and near-real
   submission time. Wallet-behaviour requirement (do not pre-announce), not a shim
