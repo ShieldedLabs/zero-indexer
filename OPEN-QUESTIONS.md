@@ -67,7 +67,7 @@ Design confirmations rather than platform unknowns; they live with the component
 - **Publish path:** the hub broadcasts through an **indexer's `CompactTxStreamer` over TLS** (not node JSON-RPC). Open: the fan-out breadth (one indexer versus several, or direct Zcash P2P `tx` to many peers for a larger relay set) and clearnet versus over Nym for the hub's own egress (see [components](README.md)).
 - **Batch density versus failover:** confirm primary-hub preference (converge for density, fail over only on outage) over spreading shims across hubs (see [trust](README.md)).
 - **Hub re-validation (resolved to telemetry-only):** the hub re-parses so a disagreement with the shim is visible, and never drops on that basis. Reasoning in [components](README.md).
-- **Flush cadence and safety margin:** confirm the twenty-block flush and the four-block mining margin against real wallet expiry windows aligned in ZIP 318 (see [the hub](README.md)).
+- **Flush cadence and safety margin:** confirm the sixty-block flush and the twelve-block mining margin against real wallet expiry windows aligned in ZIP 218 (see [the hub](README.md)).
 - **JSON-RPC front-ends:** the shim intercepts only gRPC `SendTransaction`, so a migration submitted through a JSON-RPC `sendrawtransaction` front-end would bypass classification and leak. Wallets use gRPC, so this is out of near-term scope; confirm no operator front-ends migrations via JSON-RPC (see [components](README.md)).
 
 ### Hosting and funding

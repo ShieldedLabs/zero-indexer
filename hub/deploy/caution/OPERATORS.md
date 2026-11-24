@@ -71,9 +71,9 @@ wrong shape, not merely an unbuilt one.
   configured indexer — a migration that entered only one mempool is one outage
   away from never being mined.
 - **Holds off** after each relay. The next flush waits until the cadence
-  height is `REORG_ALLOWANCE + MINING_MARGIN` (14) blocks past the tip that the
+  height is `REORG_ALLOWANCE + MINING_MARGIN` (22) blocks past the tip that the
   hub read at the start of that relay. A started or restarted hub holds off
-  14 blocks from the tip that made it ready, before its first flush. The wait
+  22 blocks from the tip that made it ready, before its first flush. The wait
   uses the cadence clock, which runs ahead of the chain while the tip is
   stale. Admission and requeue judge expiry at the end of the hold when it is
   later than the next boundary.
@@ -351,7 +351,7 @@ keeps and what it gives up, because it is easy to mistake for "no privacy":
 
 | Property | Nym mode | Clearnet mode |
 |---|---|---|
-| Migrations batched, held, published on the 20-block cadence | ✅ | ✅ |
+| Migrations batched, held, published on the 60-block cadence | ✅ | ✅ |
 | Operator's indexer never sees the migration | ✅ | ✅ |
 | Hub attested; publicly reproducible from `zero-hub` | ✅ | ✅ |
 | Hub sees migration plaintext (it always must; it broadcasts) | ✅ | ✅ |
@@ -501,7 +501,7 @@ How long a burst lasts depends on the junk:
   `Retryable`, so each entry goes back on the queue. An entry with no expiry
   (`nExpiryHeight == 0`) or a far expiry leaves only when its attempts pass
   `MAX_REQUEUE_ATTEMPTS` (8). That is nine publications, so one burst holds the
-  lane for up to nine flush windows, about 75 minutes.
+  lane for up to nine flush windows, about 225 minutes.
 - **Proven-lane junk** proves against the sender's own tree, so the node
   refuses its anchor. The hub burns those proofs and drops the entry at that
   flush. Behind an indexer that relays the refusal as retryable, the entry
@@ -610,9 +610,9 @@ expensive and rare.
   `404` as any unknown path, so a scanner cannot tell it exists. The flag also
   gates the clearnet lookup path, `POST /transaction`, which tells anyone whether
   a txid sits in the queue. A clearnet pair needs both, so it turns the flag on.
-- **Stop grace period**: set it to at least 10 minutes. On shutdown, a hub
-  that holds migrations waits for the holdoff before its final flush: up to 14
-  block times (about 350 s at 25 s), plus a flight in progress (up to about
+- **Stop grace period**: set it to at least 15 minutes. On shutdown, a hub
+  that holds migrations waits for the holdoff before its final flush: up to 22
+  block times (about 550 s at 25 s), plus a flight in progress (up to about
   160 s for 1024 entries). Slow blocks make the wait longer. A SIGKILL during
   the wait loses the queue, as a crash does.
 - **Certificates**: diskless means every restart is a fresh ACME order, against 5

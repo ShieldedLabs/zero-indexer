@@ -411,12 +411,12 @@ job tlc_violated initStaleLag           step $G6B 13                    # K4
 job tlc_violated initStaleLag           step $K6 13                     # K6
 job tlc_violated initStaleLagWithSlack  step $G6B 19                    # finding 2's spent epoch, not fixed by ShieldedLabs/zero#85
 job tlc_violated initFlakyStaleLagWithSlack step $G6B 15                # K11
-job tlc_violated initFlakyTip           step $G6C 17                    # K12
+job tlc_violated initFlakyTip           step $G6C 20                    # K12
 # K5, three causes: a crash; without one, a final flush nothing judged; with
 # no shutdown either, a requeue that gives the entry up as expired.
 job tlc_violated initTimely             step $K5 5
 job tlc_violated initTimely             noCrashStep $K5 8
-job tlc_violated initTimely             quietStep $K5 12
+job tlc_violated initTimely             quietStep $K5 15
 
 # The trust matrix: the schedule guarantee is violated once the indexer is
 # Byzantine.
@@ -445,7 +445,7 @@ job tlc_violated initStaleLagWithSlack  step "not(wStale)" 6
 job tlc_violated initFlakyTip           step "not(wAdmittedAheadOfTip)" 6
 job tlc_violated initStaleLagWithSlack  step "not(wAdmittedAheadOfTip)" 9
 job tlc_violated initTimely             step "not(wMined)" 8
-job tlc_violated initFlakyTip           step "not(wHeldOver)" 17
+job tlc_violated initFlakyTip           step "not(wHeldOver)" 20
 job tlc_violated initFlakyTipBudget     step "not(wConformingFirstOffer)" 8
 job tlc_violated initFlakyTipBudget     step "not(wRequeued)" 10
 job tlc_violated initFlakyTipBudget     step "not(wDown)" 2

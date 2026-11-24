@@ -61,23 +61,27 @@ use crate::queue::{Queue, BLOCK_SHIELDED_BUDGET, FLUSH_BUDGET, RESERVE, UNVERIFI
 use crate::tip_guard;
 use crate::BoxError;
 
-/// Blocks between flushes. Twenty blocks is about eight minutes since NU7.
-pub const FLUSH_INTERVAL_BLOCKS: u32 = 20;
+/// Blocks between flushes. Sixty blocks is about 25 minutes at 25 s.
+pub const FLUSH_INTERVAL_BLOCKS: u32 = 60;
 
-/// Blocks reserved for the batch to actually get mined after publication.
-pub const MINING_MARGIN: u32 = 4;
+/// Blocks reserved for the batch to actually get mined after publication. Twelve
+/// blocks is about 5 minutes at 25 s, the wall-clock margin before NU7.
+pub const MINING_MARGIN: u32 = 12;
 
 /// Blocks reserved for wallet-to-shim lag, Nym round trips (measured 9 to 10 s
-/// unary), acknowledgement retries and hub failover.
-pub const MAX_DELIVERY_LAG: u32 = 6;
+/// unary), acknowledgement retries and hub failover. Eighteen blocks is about
+/// 7.5 minutes at 25 s.
+pub const MAX_DELIVERY_LAG: u32 = 18;
 
 /// The tightest wallet expiry the design commits to supporting, in blocks.
 ///
-/// This is librustzcash's default (40), NOT Brave's 20. Brave is out of scope
-/// for v1 and the ask to them is to raise their default to 40. If any wallet
-/// with an expiry below 40 comes into scope, `FLUSH_INTERVAL_BLOCKS` must come
-/// back down and the batch shrinks with it.
-pub const MIN_WALLET_EXPIRY: u32 = 40;
+/// This is the ZIP 218 default expiry delta from NU7 activation (120 blocks),
+/// about 50 minutes at 25 s. Wallets that reach the shim must stamp an expiry
+/// of 120 blocks or more, so they must use a librustzcash release that has
+/// this constant. If a wallet with a smaller expiry comes into scope,
+/// `FLUSH_INTERVAL_BLOCKS` must come back down and the batch shrinks with it.
+pub const MIN_WALLET_EXPIRY: u32 =
+    zcash_primitives::transaction::builder::NU7_DEFAULT_TX_EXPIRY_DELTA;
 
 /// How far the tip may legitimately move backwards. Real reorgs happen; a drop
 /// larger than this is a lagging or hostile node and is ignored.
@@ -877,7 +881,7 @@ mod tests {
 
     #[test]
     fn the_shipped_parameters_satisfy_the_expiry_budget() {
-        // 20 + 4 + 6 = 30 <= 40.
+        // 60 + 12 + 18 = 90 <= 120.
         BatchParams::default()
             .validate()
             .expect("the shipped parameters must fit the expiry ceiling");
@@ -888,7 +892,7 @@ mod tests {
         // The whole point of the assertion: this must not be discoverable in
         // production as transactions quietly expiring.
         let bad = BatchParams {
-            flush_interval: 40,
+            flush_interval: MIN_WALLET_EXPIRY,
             ..BatchParams::default()
         };
         assert!(bad.validate().is_err());
@@ -905,7 +909,7 @@ mod tests {
 
     #[test]
     fn brave_s_twenty_block_expiry_would_not_fit_and_the_assertion_says_so() {
-        // Recorded because it is the reason MIN_WALLET_EXPIRY is 40 and not 20:
+        // Recorded because a 20-block expiry is far below the 120-block floor:
         // at Brave's default the shipped cadence does not fit, which is exactly
         // what the ask to Brave is about.
         let brave = BatchParams {
@@ -991,9 +995,8 @@ mod tests {
     #[test]
     fn a_stalled_tip_holds_the_cadence_back_by_at_most_twelve_blocks() {
         // A stall freezes the cadence until the tip goes stale, and every block
-        // mined meanwhile comes out of a queued expiry. Fifteen minutes was 12
-        // blocks at 75 s, inside a flush interval. At 25 s it is 36, more than
-        // a whole one.
+        // mined meanwhile comes out of a queued expiry. The stale window is 12
+        // blocks (5 minutes at 25 s), well inside the 60-block flush interval.
         let tip = TipTracker::new(TipGuard::Unguarded);
         tip.observe(&[1000]);
         tip.age_last_advance_for_test(Duration::from_secs(11 * NOMINAL_BLOCK_SECS));
@@ -1088,9 +1091,9 @@ mod tests {
 
     #[test]
     fn a_jump_across_the_next_flush_boundary_is_dropped() {
-        // The report's drain: any jump past the next 20-block boundary flushed
-        // at once. Twenty-one blocks in the 30 s since the last new high is
-        // past what the chain can climb (9).
+        // The report's drain: any jump past the next flush boundary flushed
+        // at once. One interval plus one block in the 30 s since the last new
+        // high is past what the chain can climb (9).
         let (tip, warm) = warm_mainnet();
         let (now, unix) = at(warm, 30);
         tip.observe_at(&[ON_SCHEDULE + FLUSH_INTERVAL_BLOCKS + 1], now, unix);
@@ -1264,9 +1267,15 @@ mod tests {
     fn flush_epochs_advance_once_per_interval_not_once_per_block() {
         // The scheduling arithmetic the cadence loop runs on.
         let n = FLUSH_INTERVAL_BLOCKS;
-        assert_eq!(1000 / n, 50);
-        assert_eq!(1019 / n, 50, "still the same epoch nineteen blocks later");
-        assert_eq!(1020 / n, 51, "a new epoch exactly at the multiple");
+        let k = 50;
+        assert_eq!((k * n) / n, k);
+        let last_of_epoch = (k + 1) * n - 1;
+        assert_eq!(last_of_epoch / n, k, "still the same epoch one block short");
+        assert_eq!(
+            ((k + 1) * n) / n,
+            k + 1,
+            "a new epoch exactly at the multiple"
+        );
     }
 
     /// One honest indexer polled across three hours of real post-NU7 blocks.
@@ -1323,7 +1332,7 @@ mod tests {
     use zero_indexer_proto::service::{LightdInfo, RawTransaction, SendResponse};
 
     const GET_LIGHTD_INFO_PATH: &str = "/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo";
-    const TIP: u32 = 1000;
+    const TIP: u32 = 1020;
     const N: u32 = FLUSH_INTERVAL_BLOCKS;
     const MARGIN: u32 = MINING_MARGIN;
 
@@ -1854,15 +1863,15 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn an_anchor_that_expires_logs_the_anchor_give_up() {
-        let tx = fixture_expiring_at(1024);
+        let tx = fixture_expiring_at(TIP + N + MARGIN);
         let queue = Arc::new(Queue::new());
         let tip = Arc::new(TipTracker::new(TipGuard::Unguarded));
-        tip.observe(&[1000]);
+        tip.observe(&[TIP]);
         assert!(matches!(
-            queue.admit(&tx, 1000, N, MARGIN),
+            queue.admit(&tx, TIP, N, MARGIN),
             crate::queue::Admission::Admitted { .. }
         ));
-        tip.observe(&[1020]);
+        tip.observe(&[TIP + N]);
         let mock = spawn_mock_indexer(
             vec![Answer::Send(-26, "16: bad-txns-orchard-unknown-anchor")],
             Duration::ZERO,
@@ -2031,11 +2040,11 @@ mod tests {
         bytes
     }
 
-    /// The hub starts at TIP = 1000 and adopts epoch 50 without flushing, as a
-    /// restart does. The tip is then reported as 999. Worked out from 999 alone
-    /// the next flush is 1000, which an expiry of 1010 survives; but the cadence
-    /// will not flush at 1000 again, so the next flush is 1020 and the hub must
-    /// refuse.
+    /// The hub starts at TIP = 1020 and adopts epoch 17 without flushing, as a
+    /// restart does. The tip is then reported as 1019. Worked out from 1019
+    /// alone the next flush is 1020, which an expiry of 1038 survives; but the
+    /// cadence will not flush at 1020 again, so the next flush is 1080 and the
+    /// hub must refuse.
     #[tokio::test]
     async fn the_hub_refuses_an_expiry_counting_on_a_boundary_adopted_before_a_tip_regression() {
         let mock = spawn_mock_indexer(vec![Answer::Send(0, "txid")], Duration::ZERO).await;
@@ -2104,19 +2113,20 @@ mod tests {
         let _ = cadence.await;
     }
 
-    /// The tip stops at 995 with an entry expiring at 1013 held. The hub goes
-    /// stale, its clock free-runs into the epoch at 1000, and the loop flushes;
-    /// the indexer cannot be reached. That epoch is spent for admission, but
-    /// not for an entry already acknowledged:
+    /// The tip stops at 1015 with an entry expiring at 1049 held. The hub goes
+    /// stale, its clock free-runs into the epoch at 1020, past the end of the
+    /// holdoff at 1037, and the loop flushes; the indexer cannot be reached.
+    /// That epoch is spent for admission, but not for an entry already
+    /// acknowledged:
     ///
-    /// - the requeue inside that flush judges at the observed 995, so the entry
-    ///   is held and offered again, not dropped on the estimate's clock. With
-    ///   the holdoff from 995 that is max(1000, 1009) + 4 = 1013;
-    /// - when the tip returns at 998, the hub refuses an expiry of 1010, which
-    ///   judged at 998 alone would count on a flush at 1000.
+    /// - the requeue inside that flush judges at the observed 1015, so the
+    ///   entry is held and offered again, not dropped on the estimate's clock.
+    ///   With the holdoff from 1015 that is max(1020, 1037) + 12 = 1049;
+    /// - when the tip returns at 1018, the hub refuses an expiry of 1038, which
+    ///   judged at 1018 alone would count on a flush at 1020.
     ///
-    /// The tip then moves to 1009, the one height that ends the shutdown wait
-    /// and keeps 1013 through the final drop.
+    /// The tip then moves to 1037, the one height that ends the shutdown wait
+    /// and keeps 1049 through the final drop.
     #[tokio::test]
     async fn a_free_running_flush_spends_its_epoch_for_admission_not_for_requeue() {
         let mock = spawn_mock_indexer(vec![Answer::Status("14")], Duration::ZERO).await;
@@ -2126,7 +2136,7 @@ mod tests {
             vec![crate::queue::Entry {
                 key: [7; 32],
                 txid: None,
-                expiry: Some(TIP + MARGIN + 9),
+                expiry: Some(TIP - 5 + REORG_ALLOWANCE + 2 * MARGIN),
                 tx_bytes: zeroize::Zeroizing::new(junk(7)),
                 attempts: 0,
                 received_height: TIP - 5,
@@ -2160,7 +2170,7 @@ mod tests {
         })
         .await;
         tip.age_last_advance_for_test(
-            TIP_STALE_AFTER + Duration::from_secs(6 * NOMINAL_BLOCK_SECS),
+            TIP_STALE_AFTER + Duration::from_secs(14 * NOMINAL_BLOCK_SECS),
         );
         wait_until("the free-running flush to offer the entry", || {
             !mock.sent.lock().unwrap().is_empty()
@@ -2310,19 +2320,19 @@ mod tests {
         (stop, cadence)
     }
 
-    /// The first observe at 1015 records the boundary 1000, and the holdoff
-    /// ends at 1015 + 14 = 1029. The boundary at 1020 waits for it.
+    /// The first observe at 1070 records the boundary 1020, and the holdoff
+    /// ends at 1070 + 22 = 1092. The boundary at 1080 waits for it.
     #[tokio::test]
     async fn a_scheduled_flush_waits_for_the_holdoff() {
         let mock = spawn_mock_indexer(vec![Answer::Send(0, "txid")], Duration::ZERO).await;
-        mock.height.store(1015, Ordering::SeqCst);
+        mock.height.store(1070, Ordering::SeqCst);
         let queue = queue_holding(&[junk(1)]);
         let tip = Arc::new(TipTracker::new(TipGuard::Unguarded));
         let (stop, cadence) = start_cadence(&queue, &mock, &tip);
         wait_until("the adoption", || tip.last_flush_boundary() == Some(TIP)).await;
 
-        // The second height only shows that the poll which saw 1020 has ended.
-        for height in [1020, 1021] {
+        // The second height only shows that the poll which saw 1080 has ended.
+        for height in [1080, 1081] {
             mock.height.store(height, Ordering::SeqCst);
             wait_until("the tip to move on", || {
                 u64::from(tip.observed_height()) == height
@@ -2334,7 +2344,7 @@ mod tests {
             "flushed inside the holdoff"
         );
 
-        mock.height.store(1029, Ordering::SeqCst);
+        mock.height.store(1092, Ordering::SeqCst);
         wait_until("the flush at the end of the holdoff", || {
             mock.sent.lock().unwrap().len() == 1
         })
@@ -2344,7 +2354,7 @@ mod tests {
         assert_eq!(mock.sent.lock().unwrap().len(), 1);
     }
 
-    /// The first observe at TIP starts a holdoff that ends at TIP + 14. A
+    /// The first observe at TIP starts a holdoff that ends at TIP + 22. A
     /// shutdown before that height waits for it, then publishes.
     #[tokio::test]
     async fn the_final_flush_waits_for_the_holdoff() {
@@ -2376,15 +2386,15 @@ mod tests {
         assert!(queue.is_empty());
     }
 
-    /// An entry expiring at 1020 is held beside junk. The shutdown wait ends
-    /// at 1017, where 1020 is less than 1017 + MARGIN. The final flush
+    /// An entry expiring at 1050 is held beside junk. The shutdown wait ends
+    /// at 1045, where 1050 is less than 1045 + MARGIN. The final flush
     /// publishes the junk alone.
     #[tokio::test]
     async fn the_final_flush_drops_an_entry_that_misses_the_margin() {
         let mock = spawn_mock_indexer(vec![Answer::Send(0, "txid")], Duration::ZERO).await;
         let queue = queue_holding(&[junk(1)]);
         assert!(matches!(
-            queue.admit(&fixture_expiring_at(1020), TIP - 10, N, MARGIN),
+            queue.admit(&fixture_expiring_at(1050), TIP - 10, N, MARGIN),
             crate::queue::Admission::Admitted { .. }
         ));
         let tip = Arc::new(TipTracker::new(TipGuard::Unguarded));
@@ -2392,8 +2402,8 @@ mod tests {
         wait_until("the adoption", || tip.last_flush_boundary() == Some(TIP)).await;
 
         let _ = stop.send(());
-        // Inside the epoch of 1000, so no scheduled flush runs first.
-        mock.height.store(1017, Ordering::SeqCst);
+        // Inside the epoch of 1020, so no scheduled flush runs first.
+        mock.height.store(1045, Ordering::SeqCst);
         tokio::time::timeout(Duration::from_secs(10), cadence)
             .await
             .expect("the cadence must exit once the holdoff ends")

@@ -148,13 +148,18 @@ module hubScenariosTest {
       .expect(not(ackedIsHeldOrSettled))
 
   /// K5c. A requeue gives an acknowledged entry up as expired. No crash and
-  /// no shutdown: the flushes at 3 and at 6 both come back unjudged, and an
-  /// expiry of 9 does not survive the flush at 9.
+  /// no shutdown: the flushes at 3, 6 and 9 all come back unjudged, and an
+  /// expiry of 12 does not survive the flush at 12.
   run requeueDropsAckedAsExpiredTest =
     started(timely)
       .then(block)
       .then(deliver(early))
       .then(block)
+      .then(flushBegin)
+      .then(judge(early, Retryable))
+      .expect(requeueReport == requeued(1, 0, 0))
+      .then(flushEnd)
+      .then(blocks(3))
       .then(flushBegin)
       .then(judge(early, Retryable))
       .expect(requeueReport == requeued(1, 0, 0))
@@ -236,28 +241,28 @@ module hubScenariosTest {
       .expect(not(conformingFirstOfferBeforeExpiry))
 
   /// A supported wallet's transaction is admitted on time at height 2. At
-  /// height 6 the hub, having adopted that epoch without flushing, is told
-  /// the tip is 5, and a duplicate of the submission arrives. Admission judges
-  /// at the recorded boundary 6, not 5: the next flush is at 9, which an
-  /// expiry of 9 does not survive, so the duplicate is refused. At 8 nothing
-  /// is waiting to be offered late.
+  /// height 9 the hub, having adopted that epoch without flushing, is told
+  /// the tip is 8, and a duplicate of the submission arrives. Admission judges
+  /// at the recorded boundary 9, not 8: the next flush is at 12, which an
+  /// expiry of 12 does not survive, so the duplicate is refused. At 11
+  /// nothing is waiting to be offered late.
   run duplicateBehindTheBoundary(lost: bool): bool =
     started(flakyTip)
       .then(block)
       .then(deliver(early))
       .expect(onTime == Set(early))
       .then(
-        if (lost) crash.then(unseenBlocks(4)).then(restart).then(see)
-        else block.then(flush([early], Accepted)).then(blocks(3)).then(flushBegin)
+        if (lost) crash.then(unseenBlocks(7)).then(restart).then(see)
+        else block.then(flush([early], Accepted)).then(blocks(3)).then(flushBegin).then(blocks(3)).then(flushBegin)
       )
-      .expect(height == 6 and h.lastEpoch == Some(2))
-      .then(observeWith(5))
-      .expect(h.admissionHeight() == 6 and decision(early) == Refused(ExpiryTooTight))
+      .expect(height == 9 and h.lastEpoch == Some(3))
+      .then(observeWith(8))
+      .expect(h.admissionHeight() == 9 and decision(early) == Refused(ExpiryTooTight))
       .then(deliver(early))
       .expect(h.queued() == Set())
       .then(see)
       .then(blocks(2))
-      .expect(height == 8 and h.queued() == Set() and h.inFlight() == Set())
+      .expect(height == 11 and h.queued() == Set() and h.inFlight() == Set())
 
   /// Finding 6, fixed by ShieldedLabs/zero#85. The hub crashed in between and lost its queue,
   /// as K5 says. The resend is refused, not offered with one block of margin
@@ -300,33 +305,35 @@ module hubScenariosTest {
   // Block capacity
   // ------------------------------------------------------------------------
 
-  /// K12. `early` arrives at 3, after the flush at 3, and `late` at 5. The
-  /// tip is reported one behind, so the flush begins at 7. One block arrives
-  /// in flight, and the indexer relays both at 8. Together they cost 4, and a
-  /// block holds 3. Block 9 takes `late`; `early` would overflow it. Block 9
-  /// was `early`'s last, so at height 9 it is lost.
+  /// K12. The flushes at 3 and 6 pass with nothing queued. At 9 the tip is
+  /// reported one behind, and `early` and `late` arrive then, late but each
+  /// at the floor. The flush begins at 10. One block arrives in flight, and
+  /// the indexer relays both at 11. Together they cost 4, and a block holds 3.
+  /// Block 12 takes `late`; `early` would overflow it. Block 12 was `early`'s
+  /// last, so at height 12 it is lost.
   run batchSpillsPastExpiryTest =
     started(flakyTip)
       .then(blocks(2))
       .then(flushBegin)
-      .then(deliver(early))
-      .expect(height == 3 and h.queued() == Set(early))
-      .then(blocks(2))
-      .then(deliver(late))
-      .expect(onTime == Set(early, late))
-      .then(advance.then(observeWith(5)))
-      .then(advance.then(observeWith(6)))
+      .then(blocks(3))
       .then(flushBegin)
-      .expect(flightStart == 7 and h.inFlight() == Set(early, late) and conformingFirstOfferBeforeExpiry)
+      .then(blocks(2))
+      .then(advance.then(observeWith(8)))
+      .then(deliver(early))
+      .then(deliver(late))
+      .expect(height == 9 and h.queued() == Set(early, late))
+      .then(advance.then(observeWith(9)))
+      .then(flushBegin)
+      .expect(flightStart == 10 and h.inFlight() == Set(early, late) and conformingFirstOfferBeforeExpiry)
       .then(advance)
       .then(judge(early, Accepted))
       .then(judge(late, Accepted))
       .then(flushEnd)
-      .expect(height == 8 and onChain == Set(early, late) and mined == Set())
+      .expect(height == 11 and onChain == Set(early, late) and mined == Set())
       .then(see)
       .expect(maximalBlocks(0) == Set(Set(early), Set(late)))
       .then(advanceWith(0, Set(late)))
-      .expect(height == 9 and mined == Set(late) and early.expiry == Some(9) and wHeldOver)
+      .expect(height == 12 and mined == Set(late) and early.expiry == Some(12) and wHeldOver)
       .expect(not(conformingMinedBeforeExpiry))
 
   /// The candidate fix on the same arrivals. Adopted at 1, the hub holds off
@@ -388,12 +395,12 @@ module hubScenariosTest {
   /// block arrives while the batch is in flight, as the margin allows for,
   /// and the node can no longer take it.
   run silenceAcrossBoundaryMissesMarginTest =
-    silenceAcrossBoundary(staleLag, early)
+    silenceAcrossBoundary(staleLag, earlyBeforeNu7)
       .expect(not(conformingFirstOfferBeforeExpiry))
       .then(advance)
       .expect(height == 9 and not(mayAdvance))
-      .expect(not(nodeWouldTake(early)))
-      .then(judge(early, Rejected))
+      .expect(not(nodeWouldTake(earlyBeforeNu7)))
+      .then(judge(earlyBeforeNu7, Rejected))
 
   /// K4, contrast. The same steps with an expiry floor one block higher,
   /// which is the relation `staleSlackFits` asks for. The same late flush
@@ -415,18 +422,18 @@ module hubScenariosTest {
       .then(blocks(2))
       .then(flushBegin)
       .then(blocks(2))
-      .then(deliver(late))
+      .then(deliver(lateBeforeNu7))
       .then(unseenBlocks(3))
       .then(staleWith(8))
-      .then(flush([late], Retryable))
-      .expect(h.queue == Map(late -> 1))
+      .then(flush([lateBeforeNu7], Retryable))
+      .expect(h.queue == Map(lateBeforeNu7 -> 1))
       .then(advance)
       .then(staleWith(9))
-      .then(flush([late], Retryable))
-      .expect(h.queue == Map(late -> 2) and h.tip == Some(5))
+      .then(flush([lateBeforeNu7], Retryable))
+      .expect(h.queue == Map(lateBeforeNu7 -> 2) and h.tip == Some(5))
       .then(3.reps(i => advance.then(staleWith(10 + i))))
       .then(flushBegin)
-      .expect(flightStart == 12 and late.expiry == Some(11))
+      .expect(flightStart == 12 and lateBeforeNu7.expiry == Some(11))
 
   /// K6. The third offer is past the expiry. The first was in time, which is
   /// all G6b covers.
@@ -439,8 +446,8 @@ module hubScenariosTest {
   /// tip that stopped at 5, still does not give it up.
   run expiringEntryDroppedAsExhaustedTest =
     requeuedTwiceWhileStale
-      .then(judge(late, Retryable))
-      .expect(isSome(late.expiry) and requeueReport == requeued(0, 0, 1))
+      .then(judge(lateBeforeNu7, Retryable))
+      .expect(isSome(lateBeforeNu7.expiry) and requeueReport == requeued(0, 0, 1))
       .then(flushEnd)
       .expect(h.queue == Map())
 
@@ -449,11 +456,11 @@ module hubScenariosTest {
   run freeRunningClockFlushesEarlyTest =
     started(staleLag)
       .then(block)
-      .then(deliver(early))
+      .then(deliver(earlyBeforeNu7))
       .then(unseenBlocks(3))
       .then(staleWith(6))
       .then(flushBegin)
-      .expect(height == 5 and h.cadence == FreeRunning(6) and h.inFlight() == Set(early))
+      .expect(height == 5 and h.cadence == FreeRunning(6) and h.inFlight() == Set(earlyBeforeNu7))
       .expect(flushesAheadOfChain and conformingFirstOfferBeforeExpiry)
 
   /// A stale hub refuses submissions until it sees the tip move again.
@@ -461,13 +468,13 @@ module hubScenariosTest {
     started(staleLag)
       .then(unseenBlocks(3))
       .then(staleWith(4))
-      .expect(wStale and decision(early) == Refused(TipStale))
-      .then(deliver(early))
+      .expect(wStale and decision(earlyBeforeNu7) == Refused(TipStale))
+      .then(deliver(earlyBeforeNu7))
       .expect(h.queued() == Set())
       .then(see)
       .expect(h.phase == Running and h.cadence == Tracking)
-      .then(deliver(early))
-      .expect(h.queued() == Set(early))
+      .then(deliver(earlyBeforeNu7))
+      .expect(h.queued() == Set(earlyBeforeNu7))
 
   /// Finding 2; the slack does not cover it. A stale hub's free-running clock
   /// reads 6 at true height 4, and the flush scheduled for 6 runs then, with
@@ -514,10 +521,10 @@ module hubScenariosTest {
   run tipAheadOfChainFlushesEarlyTest =
     started(byzIndexer)
       .then(block)
-      .then(deliver(early))
+      .then(deliver(earlyBeforeNu7))
       .then(observeWith(3))
       .then(flushBegin)
-      .expect(height == 2 and h.tip == Some(3) and h.inFlight() == Set(early))
+      .expect(height == 2 and h.tip == Some(3) and h.inFlight() == Set(earlyBeforeNu7))
       .expect(flushesAheadOfChain)
       .expect(conformingFirstOfferBeforeExpiry)
 
@@ -540,10 +547,10 @@ module hubScenariosTest {
   /// supported wallet's transaction is offered at 8 with expiry 9, and after
   /// one block in flight the node cannot take it.
   run indexerWithholdsTipFromConformingTest =
-    tipWithheld(early, 6)
-      .expect(conforming(early, cfg.params.minWalletExpiry) and onTime == Set(early))
+    tipWithheld(earlyBeforeNu7, 6)
+      .expect(conforming(earlyBeforeNu7, cfg.params.minWalletExpiry) and onTime == Set(earlyBeforeNu7))
       .expect(not(conformingFirstOfferBeforeExpiry))
       .then(advance)
-      .expect(not(nodeWouldTake(early)))
-      .then(judge(early, Rejected))
+      .expect(not(nodeWouldTake(earlyBeforeNu7)))
+      .then(judge(earlyBeforeNu7, Rejected))
 }
