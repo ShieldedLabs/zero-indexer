@@ -29,7 +29,7 @@ const PROVEN_B: &[u8] = include_bytes!("fixtures/v6_proven_b.bin");
 
 /// Regtest reads from height 1, which keeps the chunk arithmetic readable.
 const FROM: u32 = 1;
-const TIP: u32 = 2500;
+const TIP: u32 = 12_500;
 
 struct MockIndexer {
     addr: SocketAddr,
@@ -208,7 +208,12 @@ async fn a_sync_reads_in_chunks_and_resumes_inside_the_reorg_window() {
     let resume = u64::from(TIP - RESYNC_DEPTH + 1);
     assert_eq!(
         *indexer.ranges.lock().unwrap(),
-        vec![(1, 1000), (1001, 2000), (2001, 2500), (resume, 2500)]
+        vec![
+            (1, 5000),
+            (5001, 10_000),
+            (10_001, 12_500),
+            (resume, 12_500)
+        ]
     );
 }
 
@@ -222,9 +227,9 @@ fn mainnet_starts_where_the_proofs_do() {
 
 #[tokio::test]
 async fn a_chunk_too_dense_to_read_shrinks_until_it_passes() {
-    // Every range over 300 blocks fails. The sync shrinks its chunk until its
+    // Every range over 1,500 blocks fails. The sync shrinks its chunk until its
     // reads pass, and reaches the tip.
-    let indexer = spawn_limited_indexer(mined(1500, PROVEN_A), 300).await;
+    let indexer = spawn_limited_indexer(mined(1500, PROVEN_A), 1500).await;
     let chain = ChainClient::new(vec![indexer.addr], None).unwrap();
     let revealed = ChainNullifiers::new(1);
 
@@ -242,15 +247,15 @@ async fn a_chunk_too_dense_to_read_shrinks_until_it_passes() {
 
 #[tokio::test]
 async fn a_read_stops_at_the_cap_above_the_tracked_tip() {
-    // The indexer reports TIP; the hub's tracked tip allows no more than 1,200.
+    // The indexer reports TIP; the hub's tracked tip allows no more than 6,000.
     let indexer = spawn_indexer(BTreeMap::new()).await;
     let chain = ChainClient::new(vec![indexer.addr], None).unwrap();
     let revealed = ChainNullifiers::new(1);
 
-    sync_once(&revealed, &chain, FROM, 1200).await;
-    assert_eq!(revealed.synced_to(), vec![Some(1200)]);
+    sync_once(&revealed, &chain, FROM, 6000).await;
+    assert_eq!(revealed.synced_to(), vec![Some(6000)]);
     assert_eq!(
         *indexer.ranges.lock().unwrap(),
-        vec![(1, 1000), (1001, 1200)]
+        vec![(1, 5000), (5001, 6000)]
     );
 }

@@ -8,6 +8,22 @@ changelog under `zero-indexer`.
 
 ## Unreleased
 
+### Changed
+
+- The hub's first read of the Orchard nullifiers since NU6.3 is about 3.5
+  times faster. It now reads 5 000 blocks per `GetBlockRangeNullifiers` call,
+  up from 1 000. The hub dials a new connection for each call, so the number
+  of calls set the time. Against an indexer 50 ms away, the read took 53 s
+  before and 15 s after. The largest response, the 5 000 blocks right after
+  NU6.3 activation, is 3.1 MB, inside the 4 MiB body limit.
+- The hub schedule follows the 25-second blocks of NU7 and keeps its
+  pre-NU7 wall-clock times. The flush interval is 60 blocks (about 25
+  minutes), the mining margin 12, the delivery lag allowance 18 and the
+  holdoff 22. The supported wallet expiry is 120 blocks, the ZIP 218
+  default from NU7 (`NU7_DEFAULT_TX_EXPIRY_DELTA`). Wallets must stamp an
+  expiry of 120 blocks or more. Operators set a stop grace period of at
+  least 15 minutes.
+
 ## v0.1.0 - 2026-11-20
 
 ### Security

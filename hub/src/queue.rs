@@ -154,9 +154,9 @@ pub const FLUSH_BUDGET: u32 = BLOCK_SHIELDED_BUDGET - RESERVE;
 pub const UNVERIFIED_FLUSH_BUDGET: u32 = 32;
 
 /// Blocks a flush waits after the hold starts: the reorg allowance (10) plus
-/// the mining margin (4). `batcher` owns both constants, and a test there
+/// the mining margin (12). `batcher` owns both constants, and a test there
 /// keeps this equal to their sum.
-pub const HOLDOFF_BLOCKS: u32 = 14;
+pub const HOLDOFF_BLOCKS: u32 = 22;
 
 /// A lane's share of [`MAX_QUEUE_ENTRIES`].
 pub fn lane_cap(lane: Lane) -> usize {
@@ -2513,24 +2513,24 @@ mod tests {
     #[test]
     fn admission_judges_expiry_at_the_end_of_the_hold() {
         // Tip 119: the next boundary is 120, so 124 is enough without a hold.
-        // A hold from 119 ends at 133, and the deadline is 137.
+        // A hold from 119 ends at 141, and the deadline is 145.
         let q = Queue::new();
         assert!(admitted(q.admit(&expiring_at(124), 119, N, MARGIN)));
         let q = Queue::new();
         q.note_hold(119);
         assert_eq!(
-            q.admit(&expiring_at(136), 119, N, MARGIN),
+            q.admit(&expiring_at(144), 119, N, MARGIN),
             Admission::Refused(Refusal::ExpiryTooTight)
         );
-        assert!(admitted(q.admit(&expiring_at(137), 119, N, MARGIN)));
+        assert!(admitted(q.admit(&expiring_at(145), 119, N, MARGIN)));
     }
 
     #[test]
     fn admission_rechecks_the_hold_under_the_insert_lock() {
-        // The first look sees a hold from 100: the deadline is
-        // max(120, 114) + 4 = 124, and 124 passes. A flush stores a hold from
+        // The first look sees a hold from 90: the deadline is
+        // max(120, 112) + 4 = 124, and 124 passes. A flush stores a hold from
         // 120 while the admission is between its two looks. The second look
-        // sees max(120, 134) + 4 = 138, and refuses.
+        // sees max(120, 142) + 4 = 146, and refuses.
         let verified = std::sync::Arc::new(std::sync::Barrier::new(2));
         let held = std::sync::Arc::new(std::sync::Barrier::new(2));
         let mut q = Queue::new();
@@ -2541,7 +2541,7 @@ mod tests {
                 held.wait();
             }
         }));
-        q.note_hold(100);
+        q.note_hold(90);
         let tx = expiring_at(124);
         let admission = std::thread::scope(|s| {
             let admitting = s.spawn(|| q.admit(&tx, 100, N, MARGIN));
@@ -2556,8 +2556,8 @@ mod tests {
 
     #[test]
     fn requeue_judges_expiry_at_the_end_of_the_hold_this_relay_starts() {
-        // A flush at 119 starts a hold that ends at 133. Expiry 125 survives
-        // the boundary at 120 (124) and misses 133 + 4.
+        // A flush at 119 starts a hold that ends at 141. Expiry 125 survives
+        // the boundary at 120 (124) and misses 141 + 4.
         let q = Queue::new();
         assert!(admitted(q.admit(&expiring_at(125), 100, N, MARGIN)));
         let (batch, _flight) = q.begin_flight(119, None);
@@ -2568,14 +2568,14 @@ mod tests {
 
     #[test]
     fn a_draining_requeue_judges_at_the_end_of_the_hold_alone() {
-        // Hold from 100 ends at 114. Draining judges there alone, so the
-        // deadline is 118. The next boundary is 120 and its deadline is 124,
-        // which drops both. These never pass admission at tip 100; they are
-        // already out with a flush.
+        // Hold from 100 ends at 122. Draining judges there alone, so the
+        // deadline is 126. At tip 120 the next boundary is 140 and its
+        // deadline is 144, which drops both. These never pass admission at
+        // tip 120; they are already out with a flush.
         let q = Queue::new();
         q.note_hold(100);
         q.begin_draining();
-        let out = q.requeue(vec![returning(1, 118), returning(2, 117)], 100, N, MARGIN);
+        let out = q.requeue(vec![returning(1, 126), returning(2, 125)], 120, N, MARGIN);
         assert_eq!(out.held, 1);
         assert_eq!(out.dropped_expired, 1);
     }
@@ -2599,8 +2599,8 @@ mod tests {
 
     #[test]
     fn an_empty_flush_spends_its_boundary_before_the_second_look() {
-        // Tip 119, hold from 100: the first look's deadline is
-        // max(120, 114) + 4 = 124. An empty flush spends boundary 120 and
+        // Tip 119, hold from 90: the first look's deadline is
+        // max(120, 112) + 4 = 124. An empty flush spends boundary 120 and
         // does not move the hold. The second look judges at 120, whose next
         // boundary is 140, and 124 misses it.
         let verified = std::sync::Arc::new(std::sync::Barrier::new(2));
@@ -2613,7 +2613,7 @@ mod tests {
                 held.wait();
             }
         }));
-        q.note_hold(100);
+        q.note_hold(90);
         let tx = expiring_at(124);
         let admission = std::thread::scope(|s| {
             let admitting = s.spawn(|| q.admit(&tx, 119, N, MARGIN));
@@ -2622,7 +2622,7 @@ mod tests {
             assert!(batch.is_empty(), "the flush held nothing");
             assert_eq!(
                 q.hold_from(),
-                Some(100),
+                Some(90),
                 "an empty flush does not move the hold"
             );
             held.wait();
@@ -2635,9 +2635,9 @@ mod tests {
     #[test]
     fn set_schedule_is_what_admission_enforces() {
         // A budget of 32 leaves the proven cap at 0. A span of 20 from a hold
-        // at 101 ends at 121, so the deadline is 125. The const span of 14
-        // would still accept 124, and the const proven cap would still accept
-        // the fixture.
+        // at 101 ends at 121, so the deadline is 125. The const span of 22
+        // would refuse 125, and the const proven cap would still accept the
+        // fixture.
         let q = Queue::new();
         q.set_schedule(UNVERIFIED_FLUSH_BUDGET, 20);
         q.note_hold(101);

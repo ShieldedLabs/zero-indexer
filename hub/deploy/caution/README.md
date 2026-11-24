@@ -35,9 +35,9 @@ caution verify --attestation-url https://<domain>/attestation
 ```
 
 Run it from a FRESH CLONE of the public repo, never from a deploying tree.
-This is step 2 of the [auditor procedure](../../../README.md#usage). A PASS
+This is step 2 of the [auditor procedure](../../../AUDITING.md). A PASS
 proves the enclave runs the tree its operator published; steps 3 to 5 tie that
-tree to `ShieldedLabs/zeronym`, check its parameters, and check the network path.
+tree to `ShieldedLabs/zero-indexer`, check its parameters, and check the network path.
 Require **all three PCRs and the TLS binding**. Do not accept a PCR2 match alone:
 hub and shim, two entirely different binaries, produce byte-identical PCR2
 (`21b9efbc...`), so PCR2 identifies the platform, not the code.
@@ -98,7 +98,7 @@ audit time.
 
 ## Verify the attestation
 
-Run the [auditor procedure](../../../README.md#usage) against the hub's
+Run the [auditor procedure](../../../AUDITING.md) against the hub's
 domain. Its step 4 also covers each shim that diverts here: the shim's
 `ZIS_HUB` must be this hub's address.
 

@@ -76,6 +76,11 @@ free. If Brave later raises to 40 and stays in scope, nothing here changes; if a
 wallet with an expiry below 40 comes into scope, N must come back down and the
 startup assertion is what will say so.
 
+**AMENDED 2026-11-23: the floor is the NU7 default.** `min_wallet_expiry` is
+`NU7_DEFAULT_TX_EXPIRY_DELTA` (120) from zcash_primitives 0.31, the ZIP 218
+default from NU7. NU7 blocks are 25 s, so the schedule keeps its wall-clock
+times with three times the blocks: `N (60) + mining_margin (12) + delivery_lag (18) = 90 <= 120`.
+
 ### 4. Key the queue on `sha256(decrypted tx_bytes)`, not on the txid. Keep the computed txid as a separate `Option<transaction::Hash>` field used only for confirmation tracking.
 
 **Why.** Under ZIP 244 the v5/v6 txid is a digest over transaction effects and deliberately excludes authorizing data, so two different byte strings can legitimately share a txid with no hash break; v4 has classic malleability besides. A txid is therefore the wrong identity for a byte-level dedup, and any rule asserting "same txid with different bytes is impossible" would enshrine a false invariant. Payload-hash keying also makes the entry key unforgeable by the submitter, which kills the poison-suppression variant outright. Honest resends and cross-hub duplicates still collapse, because identical bytes hash identically.

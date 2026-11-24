@@ -64,6 +64,11 @@ orchard = "0.16"
 rand010 = { package = "rand", version = "0.10" }
 zcash_protocol = "0.11"
 
+# The wallet expiry floor (`MIN_WALLET_EXPIRY`) is the crate's
+# `NU7_DEFAULT_TX_EXPIRY_DELTA`. Already in the graph through zebra-chain, so
+# this adds no crate to the lockfile.
+zcash_primitives = "0.31"
+
 # CompactTxStreamer types for the indexer hop (SendTransaction, GetLightdInfo).
 zero-indexer-proto = { path = "../proto" }
 prost = "0.14"
@@ -148,8 +153,8 @@ nym-topology = { git = "https://github.com/nymtech/nym", tag = "nym-binaries-v20
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "test-util"] }
 
 # Only for tests/proven_fixtures.rs, which builds the V6 transactions with real
-# proofs that the admission tests verify. All already in the lockfile.
-zcash_primitives = "0.31"
+# proofs that the admission tests verify. All already in the lockfile. The
+# fixtures also use zcash_primitives from [dependencies].
 zcash_transparent = "0.11"
 incrementalmerkletree = "0.9"
 
