@@ -18,14 +18,14 @@ In scope:
 - The shim (`shim/`).
 - The hub (`hub/`).
 - The protocol between the shim and the hub: the messages in `proto/` and the model in `spec/`.
-- The live attested endpoints: the shim and hub enclaves on Caution. This includes the build and attestation claims in the [auditor procedure](./README.md#usage).
+- The live attested endpoints: the shim and hub enclaves on Caution. This includes the build and attestation claims in the [auditor procedure](./AUDITING.md).
 
 Out of scope:
 
 - Wallet-local concerns. In the [wallet app threat model](https://zcash.readthedocs.io/en/latest/rtd_pages/wallet_threat_model.html), these belong to the wallet. Report them to the wallet's maintainers.
 - Third-party indexers, including the indexer behind a shim. Report these to their maintainers.
 
-The threat model and the known limitations are in the [Security](./README.md#security) section of the README.
+The threat model and the known limitations are in [`THREAT-MODEL.md`](./THREAT-MODEL.md).
 
 ## Embargo and response times
 

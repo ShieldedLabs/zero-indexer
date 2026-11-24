@@ -8,8 +8,9 @@ including streaming responses and gRPC trailers. The one exception is
 `SendTransaction`, whose body it decodes, classifies with the real `zebra-chain`
 parser, and **logs**. Nothing else about the call changes.
 
-The design, the threat model and the honest limits live in
-[`README.md`](../README.md). This crate is one afternoon of it.
+The design and the honest limits are in [`README.md`](../README.md), and the
+threat model is in [`THREAT-MODEL.md`](../THREAT-MODEL.md). This crate is one
+afternoon of it.
 
 ## What this PoC deliberately does NOT do
 

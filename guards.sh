@@ -101,9 +101,9 @@ done
 # ---------------------------------------------------------------- M4
 # The auditor recipe must name the checks that exist and require all three PCRs.
 recipe_ok=1
-grep -q "caution verify" README.md || recipe_ok=0
-grep -qi "all three PCRs" README.md || recipe_ok=0
-grep -qi "dig\b\|Resolve the domain" README.md || recipe_ok=0
+grep -q "caution verify" AUDITING.md || recipe_ok=0
+grep -qi "all three PCRs" AUDITING.md || recipe_ok=0
+grep -qi "dig\b\|Resolve the domain" AUDITING.md || recipe_ok=0
 if [ "$recipe_ok" = 1 ]; then
 	pass "M4  auditor recipe names caution verify, all three PCRs, and the DNS step"
 else
@@ -116,10 +116,10 @@ fi
 # clean PASS proves the enclave runs THEIR published code. The step that closes
 # the gap is re-assembling from our own repo and diffing. Taylor calls this "the
 # whole fix, and it costs one paragraph" -- so losing the paragraph loses the fix.
-if grep -qi "diff -r" README.md && grep -qi "assemble-caution.sh" README.md; then
+if grep -qi "diff -r" AUDITING.md && grep -qi "assemble-caution.sh" AUDITING.md; then
 	pass "H1  auditor procedure keeps the re-assemble-and-diff step"
 else
-	fail "H1  the re-assemble-and-diff step is gone from README.md" \
+	fail "H1  the re-assemble-and-diff step is gone from AUDITING.md" \
 		"Without it a caution verify PASS proves only that the enclave runs the" \
 		"operator's published tree, not that the tree is zero-indexer."
 fi
@@ -128,18 +128,20 @@ fi
 # The four component guides stopped at `caution verify`, so an operator or
 # auditor following one never re-assembled, diffed, checked the hub the shim
 # points at, or resolved the domain (external report, @ouicate). H1 and M4 keep
-# the full procedure in README.md; each guide must link to it.
+# the full procedure in AUDITING.md. AUDITING.md must appear in each guide and
+# in both manifest templates.
 aud_missing=""
 for guide in shim/deploy/caution/README.md shim/deploy/caution/OPERATORS.md \
-	hub/deploy/caution/README.md hub/deploy/caution/OPERATORS.md; do
-	grep -q 'README.md#usage' "$guide" || aud_missing="$aud_missing $guide"
+	hub/deploy/caution/README.md hub/deploy/caution/OPERATORS.md \
+	shim/deploy/caution/caution.hcl.tmpl hub/deploy/caution/caution.hcl.tmpl; do
+	grep -q 'AUDITING.md' "$guide" || aud_missing="$aud_missing $guide"
 done
 if [ -z "$aud_missing" ]; then
-	pass "AUD every component guide links to the full auditor procedure"
+	pass "AUD AUDITING.md is named in every component guide and manifest template"
 else
-	fail "AUD a component guide no longer links to the auditor procedure:$aud_missing" \
+	fail "AUD AUDITING.md is missing from a guide or manifest template:$aud_missing" \
 		"A caution verify PASS alone proves only that the enclave runs the operator's" \
-		"published tree. Steps 3 to 5 live in README.md (Usage, Auditors)."
+		"published tree. Steps 3 to 5 are in AUDITING.md."
 fi
 
 # ---------------------------------------------------------------- M2
@@ -165,23 +167,24 @@ fi
 
 # ---------------------------------------------------------------- M31
 # "Not protected" must state the consequence, not just name the endpoints.
-if grep -q "txid \*\*and its value\*\*" README.md; then
-	pass "M31 README states what the operator can actually recover"
+if grep -q "txid \*\*and its value\*\*" THREAT-MODEL.md && grep -q "txid and its value" README.md; then
+	pass "M31 the operator's recovery of txid and value is stated in THREAT-MODEL.md and README.md"
 else
-	fail "M31 README's 'Not protected' no longer says the operator can recover the value" \
+	fail "M31 the operator's recovery of the value is missing from THREAT-MODEL.md or README.md" \
 		"Naming the endpoints without the consequence is the overclaim that was corrected."
 fi
 
 # ---------------------------------------------------------------- M32
 # Against the operator, source-IP protection is batching anonymity: at batch
 # size one the operator links a wallet's IP to its diverted transaction.
-if grep -qi "volume-independent" README.md; then
-	fail "M32 README calls source-IP protection volume-independent again" \
+if grep -qi "volume-independent" README.md THREAT-MODEL.md; then
+	fail "M32 source-IP protection is called volume-independent again in README.md or THREAT-MODEL.md" \
 		"Against the operator it depends on batch size, and the batch is size one."
-elif grep -q "^- \\*\\*Which transaction a wallet's IP sent.*batch size of one" README.md; then
-	pass "M32 README states the operator's batch-of-one IP link"
+elif grep -q "^- \\*\\*Which transaction a wallet's IP sent.*batch size of one" THREAT-MODEL.md \
+	&& grep -q "^- At batch size one, " README.md; then
+	pass "M32 the operator's batch-of-one IP link is stated in THREAT-MODEL.md and README.md"
 else
-	fail "M32 README no longer states the operator's batch-of-one IP link" \
+	fail "M32 the operator's batch-of-one IP link is missing from THREAT-MODEL.md or README.md" \
 		"Dropping it restores the overclaim that was corrected."
 fi
 
@@ -205,7 +208,7 @@ done
 # all of them. It compares addresses, port dropped, AND certificate names: the
 # shim authenticates its backend by name, so one name on two addresses is one
 # indexer. Operator identity is beyond a string check; step 4 of the auditor
-# procedure in README.md covers it. The first version compared the two IPs in
+# procedure in AUDITING.md covers it. The first version compared the two IPs in
 # deploy.env.example only, while its two names matched and the deploy guides
 # taught one host for both (external report, @ouicate).
 env_val() { grep -E "^$1=" deploy.env.example | cut -d= -f2 | awk '{print $1}'; }
