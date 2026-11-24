@@ -230,7 +230,7 @@ the same script as the enclave push, or use `deploy.sh`, which does it.
 
 A PASS proves the enclave runs the tree in `zero-hub`. Steps 3 to 5 of the
 [auditor procedure](../../../AUDITING.md) tie that tree to
-`ShieldedLabs/zeronym`, check its parameters, and check the network path.
+`ShieldedLabs/zero-indexer`, check its parameters, and check the network path.
 
 **Measured, 2026-08-17, from fresh public clones with the build cache cleared:**
 hub-6 (`zero-hub` @ `a1e703a8`) and shim-9 (`zero-shim` @ `cc70e9af`) both

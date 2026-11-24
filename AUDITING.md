@@ -1,8 +1,8 @@
 # Auditing an endpoint
 
-An auditor can check a `zero-indexer` endpoint without trusting its operator. This is the full procedure, and each component guide links here. Do all five steps on the shim, then on each hub that the shim lists. The [threat model](./THREAT-MODEL.md) says what a passing endpoint does and doesn't protect.
+An auditor can check a `zero-indexer` endpoint while treating its operator as untrusted. This is the full procedure. Each component guide has a link to it. Do all five steps on the shim, then on each hub that the shim lists. What a passing endpoint protects, and what stays exposed, are in the [threat model](./THREAT-MODEL.md).
 
-Caddy serves `/attestation` and `/nym-address` and is outside `EXPECTED_SHA256`, so steps 2 and 4 trust it.
+Caddy ends TLS for `/attestation` and `/nym-address`. It is outside `EXPECTED_SHA256`, so it is trusted in steps 2 and 4.
 
 1. **Reproduce the build.** Run `<component>/deploy/reproduce.sh` at the commit that the endpoint's `PROVENANCE` names. The binary hash must match `EXPECTED_SHA256`.
 2. **Verify the attestation.** In a fresh clone of the public app-source repo, run `caution verify --attestation-url https://<domain>/attestation`. It rebuilds the EIF, compares PCR0, PCR1 and PCR2 with the live attestation, and checks the TLS certificate binding. Require **all three PCRs**. (PCR0 and PCR1 are one code value within an enclave. PCR2 is the platform, the same for hub and shim.)

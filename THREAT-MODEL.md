@@ -1,6 +1,6 @@
 # Threat model
 
-This is the detail behind the [Security](./README.md#security) section of the README. Step numbers refer to the [auditor procedure](./AUDITING.md). To report a vulnerability, follow [`SECURITY.md`](./SECURITY.md).
+This is the detail behind the [Security](./README.md#security) section of the README. The step numbers are from the [auditor procedure](./AUDITING.md). To report a vulnerability, follow [`SECURITY.md`](./SECURITY.md).
 
 The adversaries are the server-side and network-metadata adversaries in Taylor Hornby's [wallet app threat model](https://zcash.readthedocs.io/en/latest/rtd_pages/wallet_threat_model.html). Wallet-local threats belong to the wallet in that model, and are out of scope here.
 

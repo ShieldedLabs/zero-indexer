@@ -67,7 +67,7 @@ Full rationale in `deploy/caution/README.md`.
   `IngressRoute` with `scheme: h2c`; the `serversscheme` annotation is silently
   ignored and every call 500s.
 - **A DNS name you control** for wallets.
-- A checkout of `github.com/ShieldedLabs/zeronym` at the commit you are auditing.
+- A checkout of `github.com/ShieldedLabs/zero-indexer` at the commit you are auditing.
 
 ## Where the enclave runs
 
@@ -198,7 +198,7 @@ checkout of yours.
 
 `caution verify` is step 2 of the [auditor procedure](../../../AUDITING.md).
 A PASS proves the enclave runs the tree in your app-source repo. Steps 3 to 5
-tie that tree to `ShieldedLabs/zeronym`, check its parameters (the hub it diverts
+tie that tree to `ShieldedLabs/zero-indexer`, check its parameters (the hub it diverts
 to included), and check the network path.
 
 Caveats:
