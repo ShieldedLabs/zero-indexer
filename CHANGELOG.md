@@ -3,9 +3,8 @@
 zeronym release notes. One `## vX.Y.Z` section per release, newest first.
 Stage upcoming entries under `## Unreleased`.
 
-Releases before the move shipped from zero. Their notes are in the
-[zero changelog](https://github.com/ShieldedLabs/zero/blob/main/CHANGELOG.md),
-under `zero-indexer`, through v29.
+Releases through v29 shipped from the zero monorepo, with their notes in its
+changelog under `zero-indexer`.
 
 ## Unreleased
 

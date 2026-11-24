@@ -29,7 +29,7 @@ module hub {
     minWalletExpiry: int,   // the smallest expiry delta a supported wallet sets
     reorgAllowance: int,    // how far back a tip report is followed
     maxAttempts: int,       // requeues an entry is allowed
-    // The candidate fix of ShieldedLabs/zero#121, off with `None`: a flush publishes at most
+    // The flush-budget fix, off with `None`: a flush publishes at most
     // this much shielded cost, and each flush waits out a holdoff.
     blockBudget: Option[int],
   }

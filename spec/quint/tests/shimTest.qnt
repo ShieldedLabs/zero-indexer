@@ -99,7 +99,7 @@ module shimTest {
       == DivertedOutput({ payload: pTrailing, frame: Submit({ nonce: 0, payload: pTrailing }), told: SentOk })),
   }
 
-  /// The two arms of the classifier (ShieldedLabs/zero#94), and what each leaves forwarded.
+  /// The two arms of the classifier, and what each leaves forwarded.
   run classifierArmsTest = all {
     // The transparent-only arm: the second leg of a TEX payment is diverted.
     assert(outputOf(initialShim, send(Clean(pTex), true))
