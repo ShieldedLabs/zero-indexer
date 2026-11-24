@@ -18,6 +18,15 @@ under `zero-indexer`, through v29.
   before and 15 s after. The largest response, the 5 000 blocks right after
   NU6.3 activation, is 3.1 MB, inside the 4 MiB body limit.
 
+### Fixed
+
+- The shim's `assemble-caution.sh` sets `ZIS_REQUIRE_DIVERSION = "true"`
+  whenever `--hub` or `--hub-nym` is set. Auditors check for this setting in
+  step 4 of the auditor procedure. Shims assembled from earlier commits fail
+  that step. A hub shim's PCR0 and PCR1 change on re-assembly. To pass step 4,
+  re-assemble and redeploy. Then push and tag the new commit at the
+  `--app-source` URL.
+
 ## v0.1.0 - 2026-11-20
 
 ### Security
