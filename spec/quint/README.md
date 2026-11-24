@@ -319,6 +319,8 @@ Block capacity added the mined set and the miner's choice of block. `timely` and
 
 `flakyTip` had 81 518 states before the tip rule followed ShieldedLabs/zero#92. The hub's best height is now part of its state, so a tip one below the best and the same tip as the best are distinct states. Every verdict and counterexample length stayed the same.
 
+The NU7 schedule raised the expiry floor of `timely` from 7 to 10. Every verdict stayed the same. Three counterexamples became 3 states longer: K12 (17 to 20), `wHeldOver` (17 to 20) and K5 without a shutdown (12 to 15). `byzIndexer` keeps the floor of 7, and its counterexample stays at 16 states.
+
 TLC runs with deadlock checking off, so a machine whose steps had died would hold everything. The gate therefore also requires one reachable state per family of steps, and the antecedent of G6b, each as a violated `not(..)` row.
 
 </details>
