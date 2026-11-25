@@ -114,5 +114,5 @@ curl -s "https://crt.sh/?q=zis-zaino.shieldedinfra.net&output=json" \
 That last point is worth stating plainly, because it is a security property and
 not just bookkeeping: a certificate for these names that does not appear in this
 file is either an unrecorded deploy or someone else's certificate for our
-domain. The Auditor Role in the Zeronym design exists partly to watch for
+domain. The Auditor Role in the zero-indexer design exists partly to watch for
 exactly that.

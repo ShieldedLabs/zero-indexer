@@ -13,7 +13,7 @@
 # detection, kernel, or Docker and BuildKit versions. The gold standard is a
 # second build on independent hardware whose hash matches the published one,
 # which is what the EXPECTED check turns from an eyeballed log line into a
-# pass/fail. .github/workflows/zeronym-hub-reproduce.yml runs this script on a
+# pass/fail. .github/workflows/zero-indexer-hub-reproduce.yml runs this script on a
 # native x86_64 runner for precisely that reason.
 #
 # Env overrides: CTX (assembled context dir), OUT (artifact dir),

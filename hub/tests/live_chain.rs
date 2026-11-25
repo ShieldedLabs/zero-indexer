@@ -1,5 +1,5 @@
 //! Integration check against a real indexer. Ignored by default: it needs a
-//! reachable `CompactTxStreamer`. The daily `zeronym-hub-indexers` workflow
+//! reachable `CompactTxStreamer`. The daily `zero-indexer-hub-indexers` workflow
 //! runs it against mainnet indexers.
 //!
 //! Plaintext h2c against a local indexer:

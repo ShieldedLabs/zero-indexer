@@ -1,4 +1,4 @@
-name: zeronym-guards
+name: zero-indexer-guards
 
 # Cheap assertions over the repository's own claims, plus the test suites.
 #
@@ -17,15 +17,15 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - ".github/workflows/zeronym-guards.yml"
+      - ".github/workflows/zero-indexer-guards.yml"
       - "**"
   pull_request:
     paths:
-      - ".github/workflows/zeronym-guards.yml"
+      - ".github/workflows/zero-indexer-guards.yml"
       - "**"
 
 concurrency:
-  group: zeronym-guards-${{ github.ref }}
+  group: zero-indexer-guards-${{ github.ref }}
   cancel-in-progress: true
 
 # The evaluator that Quint 0.33.0 runs; see the `Quint evaluator` steps.

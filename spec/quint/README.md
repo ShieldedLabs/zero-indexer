@@ -1,6 +1,6 @@
-# The zeronym protocol, specified in Quint
+# The zero-indexer protocol, specified in Quint
 
-A [Quint][quint] specification of zeronym: the protocol between a wallet, the shim in front of an operator's indexer, the hub that batches diverted transactions, and the chain.
+A [Quint][quint] specification of the zero-indexer protocol, between a wallet, the shim in front of an operator's indexer, the hub that batches diverted transactions, and the chain.
 
 > [!NOTE]
 > Checked against: `main` at `89a0310`. A citation marked with another commit or PR gives line numbers there.
@@ -20,7 +20,7 @@ A [Quint][quint] specification of zeronym: the protocol between a wallet, the sh
 
 > Who the actors are, what each one does, and where each lives in the specification.
 
-The architecture diagram and the prose description of the deployment are in [`README.md`][zeronym-readme].
+The architecture diagram and the prose description of the deployment are in [`README.md`][zero-indexer-readme].
 
 Only the mixnet transport is modelled; the HTTP transport is out of scope (see [Out of scope][out-of-scope]).
 
@@ -374,7 +374,7 @@ Only `protocol.qnt` and `hubMachine.qnt` declare variables, and no module declar
 [findings]: #findings
 [how-it-is-checked]: #how-it-is-checked
 [future-work]: #future-work
-[zeronym-readme]: ../../README.md
+[zero-indexer-readme]: ../../README.md
 [configurations]: #configurations
 [wallet-threat-model]: https://zcash.readthedocs.io/en/latest/rtd_pages/wallet_threat_model.html
 [not-modelled]: #not-modelled

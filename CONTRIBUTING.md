@@ -39,7 +39,7 @@ CHECK_TIERS=simulation sh spec/quint/check.sh
 ## Pull requests
 
 - Keep one change in each pull request.
-- A pull request into `main` needs one approval, all review threads resolved, and all `zeronym-guards` checks green.
+- A pull request into `main` needs one approval, all review threads resolved, and all `zero-indexer-guards` checks green.
 - Pull requests are squash-merged. The title becomes the commit subject. Write it as a [conventional commit](https://www.conventionalcommits.org/): `type(scope): summary`. For example, `feat(hub): scale the schedule to NU7 blocks and the 120-block expiry`. The scope is optional. Scopes in recent titles include `hub`, `readme` and `releasing`.
 - Release notes go under `## Unreleased` in the [changelog](./CHANGELOG.md), as described in the [release playbook](./RELEASING.md).
 

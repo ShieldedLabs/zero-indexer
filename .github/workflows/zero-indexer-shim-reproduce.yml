@@ -1,4 +1,4 @@
-name: zeronym-shim-reproduce
+name: zero-indexer-shim-reproduce
 
 # Answers "does zero-indexer-shim reproduce?" on an independent machine.
 #
@@ -31,19 +31,19 @@ on:
   # lists identical.
   push:
     paths:
-      - ".github/workflows/zeronym-shim-reproduce.yml"
+      - ".github/workflows/zero-indexer-shim-reproduce.yml"
       - "shim/**"
       - "vendor/**"
       - "proto/**"
   pull_request:
     paths:
-      - ".github/workflows/zeronym-shim-reproduce.yml"
+      - ".github/workflows/zero-indexer-shim-reproduce.yml"
       - "shim/**"
       - "vendor/**"
       - "proto/**"
 
 concurrency:
-  group: zeronym-shim-reproduce-${{ github.ref }}
+  group: zero-indexer-shim-reproduce-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

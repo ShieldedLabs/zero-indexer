@@ -1,6 +1,6 @@
 # Changelog
 
-zeronym release notes. One `## vX.Y.Z` section per release, newest first.
+zero-indexer release notes. One `## vX.Y.Z` section per release, newest first.
 Stage upcoming entries under `## Unreleased`.
 
 Releases through v29 shipped from the zero monorepo, with their notes in its
@@ -23,6 +23,9 @@ changelog under `zero-indexer`.
   default from NU7 (`NU7_DEFAULT_TX_EXPIRY_DELTA`). Wallets must stamp an
   expiry of 120 blocks or more. Operators set a stop grace period of at
   least 15 minutes.
+- The project's name is now zero-indexer in the docs, the workflow file names
+  and the `PROVENANCE` file. The old name, zeronym, is still in dated records
+  and earlier entries here.
 
 ### Fixed
 

@@ -106,7 +106,7 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
-[ -n "$NAME" ] || { echo "error: --name is required (e.g. zeronym-shim-zaino)" >&2; exit 2; }
+[ -n "$NAME" ] || { echo "error: --name is required (e.g. zero-indexer-shim-zaino)" >&2; exit 2; }
 [ -n "$BACKEND" ] || { echo "error: --backend is required (e.g. 66.42.124.202:443)" >&2; exit 2; }
 [ -n "$BACKEND_TLS" ] || { echo "error: --backend-tls is required (the DNS name the backend's cert carries)" >&2; exit 2; }
 [ -n "$TLS_DOMAIN" ] || { echo "error: --tls-domain is required (the name wallets connect to)" >&2; exit 2; }
@@ -620,7 +620,7 @@ fi
 EXPECTED=$(cat "$ZERO_ROOT/shim/deploy/EXPECTED_SHA256" 2>/dev/null || echo "unrecorded")
 cat > "$DEST/PROVENANCE" <<EOF
 zero-indexer-shim Caution enclave ('$NAME')
-source repo:     github.com/ShieldedLabs/zeronym
+source repo:     github.com/ShieldedLabs/zero-indexer
 serves:          $TLS_DOMAIN (TLS terminated in-enclave, ACME production)
 backend:         $BACKEND verified as $BACKEND_TLS
 diversion:       $(if [ -n "$HUB_NYM" ]; then echo "ON -> Nym mixnet, hub(s): $HUB_NYM"; elif [ -n "$HUB" ]; then echo "ON -> hub $HUB${HUB_TLS:+ verified as $HUB_TLS}"; else echo "OFF (forward-only, no privacy)"; fi)
@@ -629,7 +629,7 @@ source commit:   $SHA
 expected binary: $EXPECTED
 
 The binary inside this EIF should hash to the value above. Verify with:
-  git clone https://github.com/ShieldedLabs/zeronym && cd zeronym
+  git clone https://github.com/ShieldedLabs/zero-indexer && cd zero-indexer
   git checkout $SHA
   sh shim/deploy/reproduce.sh
 EOF

@@ -1,4 +1,4 @@
-name: zeronym-hub-reproduce
+name: zero-indexer-hub-reproduce
 
 # Answers "does zero-indexer-hub reproduce?" on an independent machine.
 #
@@ -6,7 +6,7 @@ name: zeronym-hub-reproduce
 # arm64 Mac under Rosetta emulation; a matching hash on a native x86_64 runner is
 # what upgrades the claim from "deterministic on one host" to "deterministic
 # across hosts", which is the property the Auditor Role actually needs. Sibling
-# of zeronym-shim-reproduce.yml.
+# of zero-indexer-shim-reproduce.yml.
 #
 # The job runs hub/deploy/reproduce.sh rather than re-implementing it, so
 # CI exercises the exact command auditors are told to run (including --platform
@@ -25,19 +25,19 @@ on:
   # lists identical.
   push:
     paths:
-      - ".github/workflows/zeronym-hub-reproduce.yml"
+      - ".github/workflows/zero-indexer-hub-reproduce.yml"
       - "hub/**"
       - "vendor/**"
       - "proto/**"
   pull_request:
     paths:
-      - ".github/workflows/zeronym-hub-reproduce.yml"
+      - ".github/workflows/zero-indexer-hub-reproduce.yml"
       - "hub/**"
       - "vendor/**"
       - "proto/**"
 
 concurrency:
-  group: zeronym-hub-reproduce-${{ github.ref }}
+  group: zero-indexer-hub-reproduce-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

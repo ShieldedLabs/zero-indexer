@@ -1,5 +1,5 @@
 [package]
-name = "zeronym-nymnet-probe"
+name = "zero-indexer-nymnet-probe"
 version = "0.1.0"
 edition = "2021"
 publish = false

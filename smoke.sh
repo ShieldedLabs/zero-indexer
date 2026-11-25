@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Post-deploy smoke test for a Zeronym shim and hub.
+# Post-deploy smoke test for a zero-indexer shim and hub.
 #
 # Run this the moment a deploy reports success. "Deployed" has repeatedly NOT
 # meant "works": an enclave that boots, serves valid TLS and answers /healthz
@@ -10,9 +10,9 @@
 # healthy was not, and each one prints what it MEASURED — status, bytes, elapsed
 # — so a passing line can be audited rather than believed.
 #
-#   ./smoke.sh https://zeronym-shim-8.shieldedinfra.net https://zeronym-hub-3.shieldedinfra.net
-#   ./smoke.sh --hub  https://zeronym-hub-3.shieldedinfra.net     # hub only
-#   ./smoke.sh --shim https://zeronym-shim-8.shieldedinfra.net    # shim only
+#   ./smoke.sh https://shim.example.org https://hub.example.org
+#   ./smoke.sh --hub  https://hub.example.org     # hub only
+#   ./smoke.sh --shim https://shim.example.org    # shim only
 #
 # Exits non-zero if any check failed, and names the failures on the last line.
 #
@@ -86,9 +86,9 @@ usage() {
   cat >&2 <<'EOF'
 usage: smoke.sh [--clearnet] [--shim URL] [--hub URL] [SHIM_URL [HUB_URL]]
 
-  smoke.sh https://zeronym-shim-8.shieldedinfra.net https://zeronym-hub-3.shieldedinfra.net
-  smoke.sh --hub  https://zeronym-hub-3.shieldedinfra.net     # hub only
-  smoke.sh --shim https://zeronym-shim-8.shieldedinfra.net    # shim only
+  smoke.sh https://shim.example.org https://hub.example.org
+  smoke.sh --hub  https://hub.example.org     # hub only
+  smoke.sh --shim https://shim.example.org    # shim only
 
 --clearnet: the pair runs without the mixnet hop (hub --http-submit, shim --hub/--hub-tls);
 the four Nym-mode checks are replaced by their clearnet invariants rather than
@@ -182,11 +182,11 @@ fi
 # a body left behind by a previous attempt — a request that never happened looked
 # like one that succeeded. Nothing here is ever read unless the request that
 # wrote it just returned.
-RUN_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t zeronym-smoke) || die "mktemp failed"
+RUN_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t zero-indexer-smoke) || die "mktemp failed"
 REQ=0
 
 printf '\n'
-printf 'zeronym smoke test\n'
+printf 'zero-indexer smoke test\n'
 [ -n "$SHIM" ] && printf '  shim : %s\n' "$SHIM"
 [ -n "$HUB" ]  && printf '  hub  : %s\n' "$HUB"
 printf '  tools: %s, %s\n' "$(curl -V 2>/dev/null | head -1 | cut -d' ' -f1-2)" "$("$PY" -V 2>&1)"

@@ -12,7 +12,7 @@
 //! block it accepts, and every block before that still parses.
 //!
 //! Ignored by default: it needs a reachable `CompactTxStreamer`. The daily
-//! `zeronym-latest-blocks` workflow runs it against mainnet and testnet. An
+//! `zero-indexer-latest-blocks` workflow runs it against mainnet and testnet. An
 //! upgrade activates on testnet first, so that run is the early warning.
 //!
 //! The address is a literal and the name is what the certificate must carry,

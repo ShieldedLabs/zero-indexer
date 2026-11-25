@@ -1,5 +1,5 @@
 #!/bin/sh
-# Check the zeronym protocol specification and assert every expected outcome.
+# Check the zero-indexer protocol specification and assert every expected outcome.
 #
 # "Holds" here means bounded random simulation: fixed constants, a fixed step
 # bound, a fixed number of traces and one seed. It is not a proof and it is

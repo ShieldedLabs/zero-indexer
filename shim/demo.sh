@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Zeronym zero-indexer-shim demo.
+# zero-indexer-shim demo.
 #
 #   ./demo.sh                 offline demo. Needs nothing but cargo. Always works.
 #   ./demo.sh HOST:PORT       live demo in front of a real lightwalletd or Zaino.

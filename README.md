@@ -1,8 +1,8 @@
 # zero-indexer
 
-[![checks](https://img.shields.io/github/actions/workflow/status/ShieldedLabs/zero-indexer/zeronym-guards.yml?branch=main&label=checks)](https://github.com/ShieldedLabs/zero-indexer/actions/workflows/zeronym-guards.yml)
-[![hub reproducible build](https://img.shields.io/github/actions/workflow/status/ShieldedLabs/zero-indexer/zeronym-hub-reproduce.yml?branch=main&label=hub%20reproducible%20build)](https://github.com/ShieldedLabs/zero-indexer/actions/workflows/zeronym-hub-reproduce.yml)
-[![shim reproducible build](https://img.shields.io/github/actions/workflow/status/ShieldedLabs/zero-indexer/zeronym-shim-reproduce.yml?branch=main&label=shim%20reproducible%20build)](https://github.com/ShieldedLabs/zero-indexer/actions/workflows/zeronym-shim-reproduce.yml)
+[![checks](https://img.shields.io/github/actions/workflow/status/ShieldedLabs/zero-indexer/zero-indexer-guards.yml?branch=main&label=checks)](https://github.com/ShieldedLabs/zero-indexer/actions/workflows/zero-indexer-guards.yml)
+[![hub reproducible build](https://img.shields.io/github/actions/workflow/status/ShieldedLabs/zero-indexer/zero-indexer-hub-reproduce.yml?branch=main&label=hub%20reproducible%20build)](https://github.com/ShieldedLabs/zero-indexer/actions/workflows/zero-indexer-hub-reproduce.yml)
+[![shim reproducible build](https://img.shields.io/github/actions/workflow/status/ShieldedLabs/zero-indexer/zero-indexer-shim-reproduce.yml?branch=main&label=shim%20reproducible%20build)](https://github.com/ShieldedLabs/zero-indexer/actions/workflows/zero-indexer-shim-reproduce.yml)
 [![release](https://img.shields.io/github/v/release/ShieldedLabs/zero-indexer)](https://github.com/ShieldedLabs/zero-indexer/releases/latest)
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
@@ -18,7 +18,7 @@ If you run an indexer, start with the [operator runbook](./shim/deploy/caution/O
 
 `zero-indexer` is built by [Shielded Labs](https://shieldedlabs.net). The long-term goal is a private indexer for all wallet traffic, over Nym and inside an attested enclave. Private information retrieval (PIR) is planned after that.
 
-The two binaries are `zero-indexer-shim` and `zero-indexer-hub`. The project's internal name, zeronym, is still in some workflow and crate names.
+The two binaries are `zero-indexer-shim` and `zero-indexer-hub`. The project's old name, zeronym, is still in dated records.
 
 ## Table of Contents
 
@@ -56,7 +56,7 @@ The [threat model](./THREAT-MODEL.md) has the full list, with the exact conditio
 
 ### How we verify it
 
-- When hub or shim code changes, CI builds that binary twice from cold on a native x86_64 runner ([hub](./.github/workflows/zeronym-hub-reproduce.yml), [shim](./.github/workflows/zeronym-shim-reproduce.yml)). CI then compares both builds with the hash in this repository. The recipe was first reproduced on a different machine. A merge can proceed while these two checks are pending or red.
+- When hub or shim code changes, CI builds that binary twice from cold on a native x86_64 runner ([hub](./.github/workflows/zero-indexer-hub-reproduce.yml), [shim](./.github/workflows/zero-indexer-shim-reproduce.yml)). CI then compares both builds with the hash in this repository. The recipe was first reproduced on a different machine. A merge can proceed while these two checks are pending or red.
 - An auditor can check a live endpoint while treating its operator as untrusted, with the [audit steps](./AUDITING.md). In those steps, the auditor reproduces the binary, verifies the enclave's attestation, and compares the deployed tree with this repository. The auditor also checks the published parameters and where the domain points. Caution's Caddy server is trusted in steps 2 and 4.
 - The protocol has a [Quint model](./spec/quint/README.md). CI runs a bounded random simulation of it on each pull request. TLC also checks every reachable state of a scaled-down hub model, in the four configurations with a claimed schedule guarantee.
 - [cargo vet](https://mozilla.github.io/cargo-vet/) runs on each pull request. A new dependency merges only with an audit or a recorded exemption. As of 2026-11-23, most dependencies are exempted: 712 of the hub's 846 crates and 759 of the shim's 901.

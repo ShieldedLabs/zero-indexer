@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# One-shot Zeronym deploy to Caution + Vultr DNS.
+# One-shot zero-indexer deploy to Caution + Vultr DNS.
 #
 # Reads a config file (default ./deploy.env, or the path in $1), assembles the
 # shim or hub Caution deploy repo, creates + pushes the app, then points a Vultr

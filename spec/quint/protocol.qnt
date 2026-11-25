@@ -1,6 +1,6 @@
 // -*- mode: Bluespec; -*-
 
-/// The zeronym protocol as a state machine: a wallet, a shim, one hub, the
+/// The zero-indexer protocol as a state machine: a wallet, a shim, one hub, the
 /// chain behind the hub's indexer, an unreliable network between them, and an
 /// observer that can reach the hub.
 ///

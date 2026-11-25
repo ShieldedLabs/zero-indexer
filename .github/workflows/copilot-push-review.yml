@@ -244,7 +244,7 @@ jobs:
           files=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
                     --jq '.[] | .filename, (.previous_filename // empty)')
 
-          # The sensitive paths. zeronym is first-party code from end to end, so
+          # The sensitive paths. zero-indexer is first-party code from end to end, so
           # every path counts, as `zeronym/*` did in zero.
           sensitive=0
           while IFS= read -r path; do

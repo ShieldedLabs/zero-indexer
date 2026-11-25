@@ -53,9 +53,9 @@ NYM_PLAN's M0/M5/M6 against real infrastructure.
 ```
 
 State lives outside the repo: the pinned nym checkout and build in
-`~/.cache/zeronym-nymnet` (override with `NYMNET_HOME`), node configs in
-`~/.nym/nym-nodes/zeronym-ln-*`, logs and pids and `network.json` in
-`~/.cache/zeronym-nymnet/localnet`. The probe builds into `probe/target`
+`~/.cache/zero-indexer-nymnet` (override with `NYMNET_HOME`), node configs in
+`~/.nym/nym-nodes/zero-indexer-ln-*`, logs and pids and `network.json` in
+`~/.cache/zero-indexer-nymnet/localnet`. The probe builds into `probe/target`
 (gitignored). Ports used, all loopback: 10001-10004 (mixnet), 20001-20004
 (verloc), 30001-30004 (node http), 9000 (gateway client websocket).
 

@@ -396,7 +396,7 @@ async fn send_transaction_reaches_the_indexer_byte_for_byte() {
         .header("te", "trailers")
         .header("grpc-timeout", "10S")
         .header("authorization", "Bearer test-token")
-        .header("x-zeronym-test", "metadata")
+        .header("x-zero-indexer-test", "metadata")
         .body(Full::new(body.clone()).boxed())
         .unwrap();
 
@@ -434,7 +434,10 @@ async fn send_transaction_reaches_the_indexer_byte_for_byte() {
         recorded.headers.get("authorization").unwrap(),
         "Bearer test-token"
     );
-    assert_eq!(recorded.headers.get("x-zeronym-test").unwrap(), "metadata");
+    assert_eq!(
+        recorded.headers.get("x-zero-indexer-test").unwrap(),
+        "metadata"
+    );
     assert_eq!(
         recorded.headers.get("content-type").unwrap(),
         "application/grpc"

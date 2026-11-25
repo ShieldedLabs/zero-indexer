@@ -15,7 +15,7 @@ the hub, which re-parses them (telemetry only) and broadcasts them to the
 network. So the hub is exactly the party the architecture would otherwise have to
 trust blindly.
 
-The Zeronym trust model refuses that. It hands the auditor one job: rebuild the
+The zero-indexer trust model refuses that. It hands the auditor one job: rebuild the
 hub from source, get the same hash, and check that hash against the one bound
 into the enclave attestation. Reproducibility + attestation together say: the
 code you read is the code holding your migration in plaintext, and it does
@@ -71,7 +71,7 @@ sh hub/deploy/reproduce.sh
 ```
 
 Two cold `linux/amd64` builds (Rosetta on an arm64 Mac is fine), compared to each
-other and to `EXPECTED_SHA256`. `.github/workflows/zeronym-hub-reproduce.yml`
+other and to `EXPECTED_SHA256`. `.github/workflows/zero-indexer-hub-reproduce.yml`
 runs the same script on a native x86_64 runner as the independent second machine.
 
 `EXPECTED_SHA256` tracks `main`, so between deploys it is AHEAD of the fleet and
