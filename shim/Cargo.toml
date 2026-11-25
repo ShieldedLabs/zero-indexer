@@ -3,7 +3,7 @@ name = "zero-indexer-shim"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Zeronym zero-indexer-shim: a transparent CompactTxStreamer reverse proxy that classifies SendTransaction"
+description = "zero-indexer-shim: a transparent CompactTxStreamer reverse proxy that classifies SendTransaction"
 
 # Line tables instead of full debug info for tests. A test binary here statically
 # links zebra, zaino and nym-sdk, which with `debug = 2` makes each one about half
