@@ -83,7 +83,7 @@ struct MockIndexer {
 fn lightd_info() -> LightdInfo {
     LightdInfo {
         version: "mock-indexer-0.1".to_owned(),
-        vendor: "zeronym shim test".to_owned(),
+        vendor: "zero-indexer shim test".to_owned(),
         chain_name: "regtest".to_owned(),
         block_height: 3_141_592,
         consensus_branch_id: "37a5165b".to_owned(),

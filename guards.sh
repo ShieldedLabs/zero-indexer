@@ -28,7 +28,7 @@ skips=0
 pass() { printf '  PASS  %s\n' "$1"; }
 fail() { printf '  FAIL  %s\n' "$1"; shift; [ $# -gt 0 ] && printf '        %s\n' "$@"; fails=$((fails + 1)); }
 
-printf '\nzeronym guards\n\n'
+printf '\nzero-indexer guards\n\n'
 
 # ---------------------------------------------------------------- H3
 # The one-command deploy must default to the attested configuration. Debug
@@ -237,7 +237,7 @@ fi
 # The only automated gate on the attested binaries must run on push, because
 # this branch takes direct pushes.
 for comp in hub shim; do
-	wf=".github/workflows/zeronym-$comp-reproduce.yml"
+	wf=".github/workflows/zero-indexer-$comp-reproduce.yml"
 	if grep -qE '^  push:' "$wf"; then
 		pass "M26 $comp reproduce gate runs on push"
 	else

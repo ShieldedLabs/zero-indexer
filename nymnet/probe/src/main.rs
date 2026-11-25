@@ -1,4 +1,4 @@
-//! Probe binary for the zeronym Nym localnet harness.
+//! Probe binary for the zero-indexer Nym localnet harness.
 //!
 //! Drives real `nym-sdk` clients through the local mixnet started by
 //! `../localnet.sh` to answer the SDK-behaviour questions NYM_PLAN.md

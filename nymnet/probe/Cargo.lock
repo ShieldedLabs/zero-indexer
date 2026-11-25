@@ -10053,6 +10053,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-indexer-nymnet-probe"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "nym-bin-common",
+ "nym-sdk",
+ "nym-topology",
+ "serde_json",
+ "time",
+ "tokio",
+ "zero-indexer-hub",
+ "zero-indexer-shim",
+ "zeroize",
+]
+
+[[package]]
 name = "zero-indexer-proto"
 version = "0.1.0"
 dependencies = [
@@ -10156,23 +10173,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "zeronym-nymnet-probe"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "hex",
- "nym-bin-common",
- "nym-sdk",
- "nym-topology",
- "serde_json",
- "time",
- "tokio",
- "zero-indexer-hub",
- "zero-indexer-shim",
- "zeroize",
 ]
 
 [[package]]

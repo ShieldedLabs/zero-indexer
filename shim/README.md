@@ -1,6 +1,6 @@
 # zero-indexer-shim (ZIS)
 
-Proof of concept for the Zeronym shim: a transparent reverse proxy an operator
+Proof of concept for the zero-indexer shim: a transparent reverse proxy an operator
 puts in front of their existing light-wallet indexer (lightwalletd or Zaino).
 
 It forwards every `CompactTxStreamer` request to the backing indexer unchanged,

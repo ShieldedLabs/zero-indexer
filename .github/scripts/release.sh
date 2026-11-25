@@ -9,14 +9,14 @@ cd "$(git rev-parse --show-toplevel)"
 
 usage() { sed -n '4,6p' "$0" | sed 's/^# //' >&2; exit 2; }
 
-# Pass when each zeronym reproduce workflow is green for <sha>. For each
+# Pass when each zero-indexer reproduce workflow is green for <sha>. For each
 # workflow, find the last commit at or before <sha> that touches its own
 # on.push.paths, read from the workflow file at <sha>. Accept a green push run
 # on that commit, or a green workflow_dispatch run on <sha>.
 check_reproduce() {
   local sha wf paths c push dispatch fail=0
   sha=$(git rev-parse --verify "${1:?sha}^{commit}")
-  for wf in zeronym-hub-reproduce.yml zeronym-shim-reproduce.yml; do
+  for wf in zero-indexer-hub-reproduce.yml zero-indexer-shim-reproduce.yml; do
     # YAML 1.1 reads the bare key `on` as true, so look up both.
     paths=$(git show "$sha:.github/workflows/$wf" | ruby -ryaml -e '
       y = YAML.safe_load($stdin.read)

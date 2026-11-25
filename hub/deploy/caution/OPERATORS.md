@@ -181,8 +181,7 @@ Notes that apply to both:
   harmless and slightly helpful; it is NOT the fix for enclave slowness (the
   enclave hub never retransmits — the debug console showed zero).
 - **Never pass `--debug` on a hub wallets point at.** Debug mode disables
-  attestation. A debug hub is a diagnostic; `zeronym-hub-dbg` exists for exactly
-  that and is not in `zero-hub`.
+  attestation. Use a debug hub only for diagnosis.
 
 Then, from the directory it creates:
 

@@ -119,7 +119,7 @@ pub fn generate_jwt_for_upgrade_mode_attestation(
     _keys: &ed25519::KeyPair,
     _issuer: Option<&'static str>,
 ) -> String {
-    unimplemented!("jwt generation is stubbed in the zeronym nymnet harness")
+    unimplemented!("jwt generation is stubbed in the zero-indexer nymnet harness")
 }
 
 /// Stub: upgrade-mode tokens never validate in the harness.

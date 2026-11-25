@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zeronym Nym localnet harness.
+# zero-indexer Nym localnet harness.
 #
 # Stands up a complete Nym mixnet on localhost -- three mixnodes and one entry
 # gateway, no nyxd chain, no nym-api, no credentials -- so real nym-sdk clients
@@ -18,16 +18,16 @@ set -euo pipefail
 # probe/Cargo.toml. Post-2024.12 per NYM_PLAN D12 (gateway-handshake CVE).
 PIN="nym-binaries-v2026.15-bydgoszcz"
 
-NYMNET_HOME="${NYMNET_HOME:-$HOME/.cache/zeronym-nymnet}"
+NYMNET_HOME="${NYMNET_HOME:-$HOME/.cache/zero-indexer-nymnet}"
 REPO="$NYMNET_HOME/nym"
 NODE_BIN="$REPO/target/release/nym-node"
 RUN_DIR="$NYMNET_HOME/localnet"
 NETWORK_JSON="$RUN_DIR/network.json"
 ENV_FILE="$RUN_DIR/harness.env"
-ID_PREFIX="zeronym-ln"
+ID_PREFIX="zero-indexer-ln"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROBE_DIR="$SCRIPT_DIR/probe"
-PROBE_BIN="$PROBE_DIR/target/release/zeronym-nymnet-probe"
+PROBE_BIN="$PROBE_DIR/target/release/zero-indexer-nymnet-probe"
 
 # name -> index: mix1=1 mix2=2 mix3=3 gateway=4. Ports derive from the index:
 # mixnet 1000N, verloc 2000N, http 3000N; the gateway's client websocket is 9000.
@@ -87,7 +87,7 @@ init_node() {
     --mixnet-bind-address "127.0.0.1:1000$i" \
     --verloc-bind-address "127.0.0.1:2000$i" \
     --http-bind-address "127.0.0.1:3000$i" \
-    --http-access-token=zeronym \
+    --http-access-token=zero-indexer \
     "${mode_args[@]}" \
     --output json >/dev/null
 }

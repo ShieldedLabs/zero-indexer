@@ -1,4 +1,4 @@
-name: zeronym-hub-indexers
+name: zero-indexer-hub-indexers
 
 # Does a real indexer still answer the hub as the hub reads it?
 #
@@ -18,26 +18,26 @@ name: zeronym-hub-indexers
 # do not parse, and a copy of a mined transaction.
 #
 # The indexers are repository variables, as `host:port`, so that nobody's
-# server is written into this file. zeronym-latest-blocks reads the same
+# server is written into this file. zero-indexer-latest-blocks reads the same
 # three:
 #
-#   ZERONYM_MAINNET_LIGHTWALLETD
-#   ZERONYM_MAINNET_ZTREAMER
-#   ZERONYM_MAINNET_ZINDER
+#   ZERO_INDEXER_MAINNET_LIGHTWALLETD
+#   ZERO_INDEXER_MAINNET_ZTREAMER
+#   ZERO_INDEXER_MAINNET_ZINDER
 #
 # A job whose variable is unset FAILS. One that skipped would look exactly
 # like one that passed.
 
 on:
   schedule:
-    # Daily, off the hour, after zeronym-latest-blocks at 05:23.
+    # Daily, off the hour, after zero-indexer-latest-blocks at 05:23.
     - cron: "41 5 * * *"
   workflow_dispatch:
   # Only the files that read an indexer's replies, so that most hub changes
   # send no traffic to someone's server. The schedule catches the rest.
   pull_request:
     paths:
-      - ".github/workflows/zeronym-hub-indexers.yml"
+      - ".github/workflows/zero-indexer-hub-indexers.yml"
       - "hub/Cargo.toml"
       - "hub/Cargo.lock"
       - "hub/src/chain.rs"
@@ -54,7 +54,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: zeronym-hub-indexers-${{ github.ref }}
+  group: zero-indexer-hub-indexers-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -68,11 +68,11 @@ jobs:
       matrix:
         include:
           - row: mainnet, lightwalletd
-            indexer: ${{ vars.ZERONYM_MAINNET_LIGHTWALLETD }}
+            indexer: ${{ vars.ZERO_INDEXER_MAINNET_LIGHTWALLETD }}
           - row: mainnet, ztreamer
-            indexer: ${{ vars.ZERONYM_MAINNET_ZTREAMER }}
+            indexer: ${{ vars.ZERO_INDEXER_MAINNET_ZTREAMER }}
           - row: mainnet, zinder
-            indexer: ${{ vars.ZERONYM_MAINNET_ZINDER }}
+            indexer: ${{ vars.ZERO_INDEXER_MAINNET_ZINDER }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

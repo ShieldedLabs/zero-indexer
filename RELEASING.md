@@ -1,6 +1,6 @@
-# Releasing zeronym
+# Releasing zero-indexer
 
-This is the playbook for a zeronym release. Run the steps below on cut day, in order.
+This is the playbook for a zero-indexer release. Run the steps below on cut day, in order.
 
 > [!IMPORTANT]
 > Versions are `vX.Y.Z` tags. One tag covers the whole repository. In every command below, replace `vX.Y.Z` with the new version (for example `v0.1.0`).
@@ -50,7 +50,7 @@ A red reproduce run blocks nothing on its own, so check both builds for the rele
 Both lines must say `ok`. On `STOP`, dispatch that workflow on `release-vX.Y.Z` and run the check again once it passes.
 
 ```sh
-.github/scripts/release.sh dispatch zeronym-hub-reproduce.yml release-vX.Y.Z   # or the shim one
+.github/scripts/release.sh dispatch zero-indexer-hub-reproduce.yml release-vX.Y.Z   # or the shim one
 ```
 
 ## 4. Tag and release
@@ -68,14 +68,14 @@ anchor=$(printf '%s' "$heading" | tr '[:upper:]' '[:lower:]' | tr -dc 'a-z0-9 _-
 cat > notes.md <<EOF
 ## Changes
 
-SUMMARY See [vX.Y.Z in CHANGELOG.md](https://github.com/ShieldedLabs/zeronym/blob/vX.Y.Z/CHANGELOG.md#${anchor}).
+SUMMARY See [vX.Y.Z in CHANGELOG.md](https://github.com/ShieldedLabs/zero-indexer/blob/vX.Y.Z/CHANGELOG.md#${anchor}).
 
 ## Reproducible-build pins
 
-These are the reproducible-build pins at [vX.Y.Z](https://github.com/ShieldedLabs/zeronym/tree/vX.Y.Z) (\`${SHA}\`).
+These are the reproducible-build pins at [vX.Y.Z](https://github.com/ShieldedLabs/zero-indexer/tree/vX.Y.Z) (\`${SHA}\`).
 
-- Hub \`${hub}\` ([EXPECTED_SHA256](https://github.com/ShieldedLabs/zeronym/blob/${SHA}/hub/deploy/EXPECTED_SHA256))
-- Shim \`${shim}\` ([EXPECTED_SHA256](https://github.com/ShieldedLabs/zeronym/blob/${SHA}/shim/deploy/EXPECTED_SHA256))
+- Hub \`${hub}\` ([EXPECTED_SHA256](https://github.com/ShieldedLabs/zero-indexer/blob/${SHA}/hub/deploy/EXPECTED_SHA256))
+- Shim \`${shim}\` ([EXPECTED_SHA256](https://github.com/ShieldedLabs/zero-indexer/blob/${SHA}/shim/deploy/EXPECTED_SHA256))
 
 A live enclave runs the hash in \`PROVENANCE\` on its \`deploy-<app-id>\` tag. Check that file to see what a given endpoint runs.
 EOF
@@ -88,9 +88,9 @@ test -n "$hub" &&
 test -n "$shim" &&
 test -n "$heading" &&
 ! grep -q SUMMARY notes.md &&
-git tag -a vX.Y.Z "$SHA" -m "zeronym vX.Y.Z" &&
+git tag -a vX.Y.Z "$SHA" -m "zero-indexer vX.Y.Z" &&
 git push origin vX.Y.Z &&
-gh release create vX.Y.Z --verify-tag --title "zeronym vX.Y.Z" --notes-file notes.md
+gh release create vX.Y.Z --verify-tag --title "zero-indexer vX.Y.Z" --notes-file notes.md
 ```
 
 ## 5. Announce

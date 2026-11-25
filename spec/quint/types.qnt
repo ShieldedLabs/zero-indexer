@@ -1,6 +1,6 @@
 // -*- mode: Bluespec; -*-
 
-/// The vocabulary of the zeronym protocol: every domain the components, the
+/// The vocabulary of the zero-indexer protocol: every domain the components, the
 /// wire and the properties talk about, and nothing that computes.
 ///
 /// Domains are sum types. A value that the protocol cannot produce (a refusal

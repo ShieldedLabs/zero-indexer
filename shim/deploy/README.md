@@ -16,7 +16,7 @@ rocksdb and no libzcash_script.
 
 ## Why reproducibility is the whole point
 
-The Zeronym trust model is detection-based, and it hands the auditor TWO jobs,
+The zero-indexer trust model is detection-based, and it hands the auditor TWO jobs,
 not one. This section used to describe a single job -- rebuild, get the same
 hash, and check it "against the one bound into the enclave attestation" --
 and that second half was not possible: no attestation this platform produces
@@ -51,7 +51,7 @@ builds. It is a hash anyone can independently recompute.
 | `reproduce.sh` | The proof: two cold builds, compared against each other **and** against `EXPECTED_SHA256`. |
 | `EXPECTED_SHA256` | The published binary hash, in one machine-readable place. `reproduce.sh` and CI both read it; re-baselining is an explicit, reviewable edit. |
 
-`.github/workflows/zeronym-shim-reproduce.yml` runs `reproduce.sh` itself (not a
+`.github/workflows/zero-indexer-shim-reproduce.yml` runs `reproduce.sh` itself (not a
 copy of its logic) on a native x86_64 runner, which is the
 independent-second-machine half of the claim. Running the script rather than
 re-implementing it is deliberate: CI then exercises the exact command auditors
@@ -196,7 +196,7 @@ own repository, so the move leaves the in-image paths and the hash unchanged.
 **The gRPC code is committed, generated code.** `zero-indexer-proto` has no
 build script and the image carries no protoc, so `proto/src/` compiles as it is.
 `proto/gen` regenerates it on a developer machine, and the `proto` job
-in `zeronym-guards.yml` checks that the committed files match.
+in `zero-indexer-guards.yml` checks that the committed files match.
 
 **No cache mounts, ever, in this file.** See above. The sibling
 `overlay/Containerfile` uses them and is correspondingly unsuitable for proving
@@ -1129,7 +1129,7 @@ scripts are POSIX sh and run under dash).
 > `git archive HEAD` cannot see it.
 
 ```sh
-git clone https://github.com/ShieldedLabs/zeronym && cd zeronym
+git clone https://github.com/ShieldedLabs/zero-indexer && cd zero-indexer
 git checkout <the commit recorded below>
 
 # Assemble the context (git archive HEAD, so your working tree is irrelevant)

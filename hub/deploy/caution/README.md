@@ -70,7 +70,7 @@ hub.
 
 ```sh
 sh hub/deploy/caution/assemble-caution.sh \
-  --name zeronym-hub-1 \
+  --name zero-indexer-hub-1 \
   --indexers 203.0.113.10:443 \
   --indexer-tls indexer.example.org \
   --network mainnet \

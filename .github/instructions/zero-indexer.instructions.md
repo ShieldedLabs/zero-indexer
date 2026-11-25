@@ -2,7 +2,7 @@
 applyTo: "**"
 ---
 
-# Reviewing zeronym
+# Reviewing zero-indexer
 
 First-party code: a shim and a hub that carry Zcash traffic over the Nym mixnet,
 deployed as attested enclaves. Unlike the vendored trees, we own all of this and

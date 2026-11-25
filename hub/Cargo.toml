@@ -3,7 +3,7 @@ name = "zero-indexer-hub"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Zeronym zero-indexer-hub: batches migration transactions from many shims and publishes them together"
+description = "zero-indexer-hub: batches migration transactions from many shims and publishes them together"
 
 # Line tables instead of full debug info for tests, for the reason spelled out in
 # the shim's Cargo.toml: these test binaries statically link zebra, zaino and

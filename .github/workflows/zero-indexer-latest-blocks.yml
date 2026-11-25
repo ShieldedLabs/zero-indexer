@@ -1,4 +1,4 @@
-name: zeronym-latest-blocks
+name: zero-indexer-latest-blocks
 
 # Does the zebra-chain the shim pins still read what the chain mines?
 #
@@ -24,10 +24,10 @@ name: zeronym-latest-blocks
 # The indexer for each row is a repository variable, as `host:port`, so that
 # nobody's server is written into this file:
 #
-#   ZERONYM_MAINNET_LIGHTWALLETD
-#   ZERONYM_MAINNET_ZTREAMER
-#   ZERONYM_MAINNET_ZINDER
-#   ZERONYM_TESTNET_LIGHTWALLETD
+#   ZERO_INDEXER_MAINNET_LIGHTWALLETD
+#   ZERO_INDEXER_MAINNET_ZTREAMER
+#   ZERO_INDEXER_MAINNET_ZINDER
+#   ZERO_INDEXER_TESTNET_LIGHTWALLETD
 #
 # A job whose variable is unset FAILS. One that skipped would look exactly
 # like one that passed.
@@ -44,7 +44,7 @@ on:
   # catch.
   pull_request:
     paths:
-      - ".github/workflows/zeronym-latest-blocks.yml"
+      - ".github/workflows/zero-indexer-latest-blocks.yml"
       - "shim/Cargo.toml"
       - "shim/Cargo.lock"
       - "shim/src/**"
@@ -59,7 +59,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: zeronym-latest-blocks-${{ github.ref }}
+  group: zero-indexer-latest-blocks-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -76,16 +76,16 @@ jobs:
           # variable pointing at the wrong network fails the job.
           - row: mainnet
             chain: main
-            indexer: ${{ vars.ZERONYM_MAINNET_LIGHTWALLETD }}
+            indexer: ${{ vars.ZERO_INDEXER_MAINNET_LIGHTWALLETD }}
           - row: mainnet, ztreamer
             chain: main
-            indexer: ${{ vars.ZERONYM_MAINNET_ZTREAMER }}
+            indexer: ${{ vars.ZERO_INDEXER_MAINNET_ZTREAMER }}
           - row: mainnet, zinder
             chain: main
-            indexer: ${{ vars.ZERONYM_MAINNET_ZINDER }}
+            indexer: ${{ vars.ZERO_INDEXER_MAINNET_ZINDER }}
           - row: testnet
             chain: test
-            indexer: ${{ vars.ZERONYM_TESTNET_LIGHTWALLETD }}
+            indexer: ${{ vars.ZERO_INDEXER_TESTNET_LIGHTWALLETD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -61,7 +61,7 @@ fronts exactly one indexer, so each backend gets its own app.
 
 ```bash
 sh shim/deploy/caution/assemble-caution.sh \
-  --name zeronym-shim-lwd \
+  --name zero-indexer-shim-lwd \
   --backend 66.42.124.202:443 \
   --backend-tls lwd.shieldedinfra.net \
   --tls-domain zis-lwd.shieldedinfra.net

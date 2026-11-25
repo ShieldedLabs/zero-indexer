@@ -22,7 +22,7 @@ Install `protoc` 36.2, the version the CI job pins, then run:
 cargo run --locked --manifest-path proto/gen/Cargo.toml
 ```
 
-The `proto` job in `zeronym-guards.yml` runs this command and fails when the
+The `proto` job in `zero-indexer-guards.yml` runs this command and fails when the
 result differs from the committed files.
 
 ## Update the protocol

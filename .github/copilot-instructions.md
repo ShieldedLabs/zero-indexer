@@ -9,7 +9,7 @@ when you find them, but a bug does not need one to be worth reporting.
 
 ## This repository
 
-- zeronym is first-party code: the shim (`shim/`), the hub (`hub/`), the gRPC
+- zero-indexer is first-party code: the shim (`shim/`), the hub (`hub/`), the gRPC
   types (`proto/`) and the Quint specification (`spec/`).
 - `vendor/` holds patched copies of crates.io crates. Review the lines that
   differ from the published crate.
